@@ -1,0 +1,109 @@
+name: Collect story seed cases
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/collect-story-cases.yml
+
+permissions:
+  contents: write
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Prepare directories
+        run: |
+          rm -rf .case-raw .case-out
+          mkdir -p .case-raw .case-out
+
+      - name: Collect Qidian rankings
+        shell: bash
+        run: |
+          set +e
+          node skills/story-long-scan/scripts/qidian-rank-scraper.js \
+            --type all \
+            --mode mobile \
+            --outdir .case-raw
+          code=$?
+          set -e
+          if [ "$code" -ne 0 ] && [ "$code" -ne 2 ]; then
+            exit "$code"
+          fi
+
+      - name: Collect Fanqie and Qimao when browser runtime is available
+        shell: bash
+        run: |
+          set +e
+          npm install -g agent-browser
+          install_code=$?
+          if [ "$install_code" -eq 0 ]; then
+            node skills/browser-cdp/scripts/setup-cdp-chrome.js 9222
+            cdp_code=$?
+            if [ "$cdp_code" -eq 0 ]; then
+              node skills/story-long-scan/scripts/fanqie-rank-scraper.js \
+                --channel 1 \
+                --type all \
+                --top 20 \
+                --outdir .case-raw
+              node skills/story-long-scan/scripts/qimao-rank-scraper.js \
+                --channel male \
+                --type all \
+                --period all \
+                --outdir .case-raw
+            fi
+          fi
+          exit 0
+
+      - name: Build Seed Case pool
+        run: |
+          node skills/story-long-scan/scripts/case-pool-builder.js \
+            --input .case-raw \
+            --min-chars 80 \
+            --outdir .case-out
+
+      - name: Show Case count
+        shell: bash
+        run: |
+          printf 'Markdown cases: '
+          grep -c '^## 《' .case-out/榜单数据.md || true
+          printf 'JSONL cases: '
+          wc -l < .case-out/榜单数据.jsonl
+
+      - name: Upload Case artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: story-seed-cases
+          path: |
+            .case-out/榜单数据.md
+            .case-out/榜单数据.jsonl
+
+      - name: Publish latest Case pool to fork
+        shell: bash
+        run: |
+          mkdir -p data/story-cases
+          cp .case-out/榜单数据.md data/story-cases/榜单数据.md
+          cp .case-out/榜单数据.jsonl data/story-cases/榜单数据.jsonl
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/story-cases/榜单数据.md data/story-cases/榜单数据.jsonl
+          if git diff --cached --quiet; then
+            echo "Case pool unchanged"
+            exit 0
+          fi
+          git commit -m "data: refresh story seed case pool"
+          git push origin HEAD:main
