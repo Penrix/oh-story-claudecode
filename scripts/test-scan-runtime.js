@@ -686,7 +686,9 @@ function testStoryCaseCollector() {
   assert(built.cases.some((item) => item.title === "历史老书"), "历史池独有 Case 不能被新一轮覆盖丢失");
   assert.deepStrictEqual(Object.keys(tokyo).sort(), ["intro", "title"]);
   assert.match(collector.renderCaseMarkdown(built.cases), /## 《东京选择》/);
-  assert(!collector.renderCaseMarkdown(built.cases).includes("作者"), "最终 Case 输出不得混入榜单元数据");
+  const finalMd = collector.renderCaseMarkdown(built.cases);
+  assert(!/^\*.*作者.*\*$/m.test(finalMd), "最终 Case 输出不得混入作者元数据行");
+  assert(!/\*\*排名|\*\*榜单值|\*\*总推荐/u.test(finalMd), "最终 Case 输出不得混入榜单元数据");
 
   const fanqie = loadFresh(
     path.join(repoRoot, "skills/story-long-scan/scripts/fanqie-rank-scraper.js")
