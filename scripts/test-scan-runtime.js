@@ -717,7 +717,7 @@ function testQimaoPeriodPlan() {
   );
   const dirtyDesc = `${"甲".repeat(110)}。 飙升 18名`;
   const cleanDesc = qimao.cleanDesc(dirtyDesc);
-  assert(cleanDesc.length <= 103, "七猫简介必须截断到 100 字 + ...");
+  assert.strictEqual(cleanDesc, `${"甲".repeat(110)}。`, "七猫简介必须保留完整正文");
   assert(!cleanDesc.includes("飙升 18名"), "七猫排名变化 UI 文本不得混入简介");
 
   const incompleteBook = {
