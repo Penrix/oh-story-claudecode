@@ -652,14 +652,39 @@ function testStoryCaseCollector() {
     "---",
   ].join("\n");
 
-  const built = collector.buildCasePool([md], 80);
-  assert.strictEqual(built.stats.extracted, 3);
-  assert.strictEqual(built.stats.acceptedBeforeDedupe, 2);
-  assert.strictEqual(built.stats.duplicates, 1);
-  assert.strictEqual(built.stats.final, 1);
-  assert.strictEqual(built.cases[0].title, "东京选择");
-  assert.match(built.cases[0].intro, /主动利用这种能力/);
-  assert.deepStrictEqual(Object.keys(built.cases[0]).sort(), ["intro", "title"]);
+  const historyIntro =
+    longIntro +
+    "几年后，他已经不再被动等待心声出现，而是主动把这项能力变成自己选择机会、关系和生活方向的工具。";
+  const oldBookIntro =
+    "一个已经完结多年的老作者，在事业最低谷时意外得到一次重新选择人生节点的机会。" +
+    "他没有回到少年时代，而是回到第一本书即将失败的那一天，于是决定先救活作品，再借作品改变自己的职业、人脉和家庭处境。" +
+    "旧时代的编辑制度、读者口味和网络环境都没有改变，改变的只有他已经知道哪些选择会把自己送进死路。";
+  const history = [
+    "# 榜单数据",
+    "",
+    "## 《东京选择》",
+    "",
+    historyIntro,
+    "",
+    "---",
+    "",
+    "## 《历史老书》",
+    "",
+    oldBookIntro,
+    "",
+    "---",
+  ].join("\n");
+
+  const built = collector.buildCasePool([md, history], 80);
+  assert.strictEqual(built.stats.extracted, 5);
+  assert.strictEqual(built.stats.acceptedBeforeDedupe, 4);
+  assert.strictEqual(built.stats.duplicates, 2);
+  assert.strictEqual(built.stats.final, 2);
+  const tokyo = built.cases.find((item) => item.title === "东京选择");
+  assert(tokyo, "跨日期累积后必须保留东京选择");
+  assert.strictEqual(tokyo.intro, historyIntro, "同名 Case 必须保留信息更完整的历史/新版本");
+  assert(built.cases.some((item) => item.title === "历史老书"), "历史池独有 Case 不能被新一轮覆盖丢失");
+  assert.deepStrictEqual(Object.keys(tokyo).sort(), ["intro", "title"]);
   assert.match(collector.renderCaseMarkdown(built.cases), /## 《东京选择》/);
   assert(!collector.renderCaseMarkdown(built.cases).includes("作者"), "最终 Case 输出不得混入榜单元数据");
 
@@ -672,6 +697,58 @@ function testStoryCaseCollector() {
   const veryLong = "第一段。" + "甲".repeat(180) + "最后一段。";
   assert.strictEqual(fanqie.cleanDesc(veryLong), veryLong, "番茄简介不得截断");
   assert.strictEqual(qimao.cleanDesc(veryLong), veryLong, "七猫简介不得截断");
+}
+
+function testQidianBooklistCollector() {
+  const scraper = loadFresh(
+    path.join(repoRoot, "skills/story-long-scan/scripts/qidian-booklist-scraper.js")
+  );
+  const collector = loadFresh(
+    path.join(repoRoot, "skills/story-long-scan/scripts/case-pool-builder.js")
+  );
+
+  const anchors = scraper.extractAnchorBookIdsFromMarkdown([
+    "[作品页](https://m.qidian.com/book/1040584849/)",
+    "[作品页](https://www.qidian.com/book/1039526256/)",
+    "[重复](https://m.qidian.com/book/1040584849/)",
+  ].join("\n"));
+  assert.deepStrictEqual(anchors, ["1040584849", "1039526256"]);
+
+  assert.match(
+    scraper.normalizeBooklistUrl(
+      "/booklist/detail/12345/",
+      "https://book.qidian.com/booklist/"
+    ),
+    /qidian\.com\/booklist\/detail\/12345\//
+  );
+  assert.strictEqual(
+    scraper.normalizeBooklistUrl("https://book.qidian.com/booklist/"),
+    "",
+    "书单首页不是具体书单"
+  );
+  assert.strictEqual(
+    scraper.normalizeBooklistUrl("https://example.com/booklist/123"),
+    "",
+    "外站链接不能混入起点书单"
+  );
+  assert.match(scraper.buildBooklistLinksJS(), /包含本书的书单/);
+  assert.match(scraper.buildBookIdsFromListJS(), /book\|info/);
+  assert.match(scraper.buildBookDetailsJS(["1"]), /作品简介/);
+
+  const intro =
+    "主角在一次失败后离开原来的行业，本想回乡过普通生活，却在整理旧书时发现父亲留下的一份名单。" +
+    "名单上的每个人都曾在同一年改变命运，他决定逐个找到他们，由此重新进入早已离开的商业世界。" +
+    "每找到一个人，他都会得到一段过去从未知道的关系，也让自己的人生重新拥有可以下注的机会。";
+  const rendered = scraper.renderMarkdown(
+    [{ title: "书单扩展样书", intro, url: "https://www.qidian.com/book/1/" }],
+    { anchorCount: 3, listCount: 5, candidateCount: 9 }
+  );
+  assert.match(rendered, /# 起点 · 上榜作品关联书单扩展/);
+  assert.match(rendered, /## #1 书单扩展样书/);
+  const built = collector.buildCasePool([rendered], 80);
+  assert.strictEqual(built.stats.final, 1);
+  assert.strictEqual(built.cases[0].title, "书单扩展样书");
+  assert.strictEqual(built.cases[0].intro, intro);
 }
 
 // 七猫大热榜：日/月必须是显式采集维度，并进入文件名；非大热榜只采一次。
@@ -1508,6 +1585,7 @@ testJjwxcDetailFailureIsolation();
 testQidianRankIsolation();
 testQidianFieldContractAndDescriptionPreservation();
 testStoryCaseCollector();
+testQidianBooklistCollector();
 testQimaoPeriodPlan();
 testQimaoPartialTargetStatus();
 testLongScanArgumentValidation();
