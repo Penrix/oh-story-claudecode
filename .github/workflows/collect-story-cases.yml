@@ -24,14 +24,14 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: Prepare directories
         run: |
           rm -rf .case-raw .case-out
           mkdir -p .case-raw .case-out
 
-      - name: Collect Qidian rankings
+      - name: Collect Qidian ranking anchors
         shell: bash
         run: |
           set +e
@@ -53,34 +53,69 @@ jobs:
           Xvfb :99 -screen 0 1920x1080x24 >/tmp/story-case-xvfb.log 2>&1 &
           echo "DISPLAY=:99" >> "$GITHUB_ENV"
 
-      - name: Collect Fanqie and Qimao when browser runtime is available
+      - name: Start browser collection runtime
+        shell: bash
+        run: |
+          npm install -g agent-browser
+          node skills/browser-cdp/scripts/setup-cdp-chrome.js 9222
+
+      - name: Collect Fanqie and Qimao ranking anchors
         shell: bash
         run: |
           set +e
-          npm install -g agent-browser
-          install_code=$?
-          if [ "$install_code" -eq 0 ]; then
-            node skills/browser-cdp/scripts/setup-cdp-chrome.js 9222
-            cdp_code=$?
-            if [ "$cdp_code" -eq 0 ]; then
-              node skills/story-long-scan/scripts/fanqie-rank-scraper.js \
-                --channel 1 \
-                --type all \
-                --top 20 \
-                --outdir .case-raw
-              node skills/story-long-scan/scripts/qimao-rank-scraper.js \
-                --channel male \
-                --type all \
-                --period all \
-                --outdir .case-raw
-            fi
+          node skills/story-long-scan/scripts/fanqie-rank-scraper.js \
+            --channel 1 \
+            --type all \
+            --top 20 \
+            --outdir .case-raw
+          fanqie_code=$?
+
+          node skills/story-long-scan/scripts/qimao-rank-scraper.js \
+            --channel male \
+            --type all \
+            --period all \
+            --outdir .case-raw
+          qimao_code=$?
+          set -e
+
+          echo "Fanqie exit: $fanqie_code"
+          echo "Qimao exit: $qimao_code"
+          # 0=完整成功，2=部分成功；两者都保留已采到的数据。
+          if [ "$fanqie_code" -ne 0 ] && [ "$fanqie_code" -ne 2 ]; then
+            echo "::warning::Fanqie ranking collection failed"
+          fi
+          if [ "$qimao_code" -ne 0 ] && [ "$qimao_code" -ne 2 ]; then
+            echo "::warning::Qimao ranking collection failed"
           fi
           exit 0
 
-      - name: Build Seed Case pool
+      - name: Expand ranked Qidian books through reader booklists
+        shell: bash
         run: |
-          node skills/story-long-scan/scripts/case-pool-builder.js \
+          set +e
+          node skills/story-long-scan/scripts/qidian-booklist-scraper.js \
             --input .case-raw \
+            --anchors 30 \
+            --lists 60 \
+            --books 600 \
+            --outdir .case-raw
+          code=$?
+          set -e
+          if [ "$code" -ne 0 ] && [ "$code" -ne 2 ]; then
+            echo "::warning::Qidian booklist expansion failed; ranking cases will still be published"
+          fi
+          exit 0
+
+      - name: Build cumulative Seed Case pool
+        shell: bash
+        run: |
+          inputs=(--input .case-raw)
+          if [ -f data/story-cases/榜单数据.md ]; then
+            echo "Including historical Case pool"
+            inputs+=(--input data/story-cases/榜单数据.md)
+          fi
+          node skills/story-long-scan/scripts/case-pool-builder.js \
+            "${inputs[@]}" \
             --min-chars 80 \
             --outdir .case-out
 
@@ -100,18 +135,36 @@ jobs:
             .case-out/榜单数据.md
             .case-out/榜单数据.jsonl
 
-      - name: Publish latest Case pool to fork
+      - name: Publish cumulative Case pool to fork
         shell: bash
         run: |
-          mkdir -p data/story-cases
-          cp .case-out/榜单数据.md data/story-cases/榜单数据.md
-          cp .case-out/榜单数据.jsonl data/story-cases/榜单数据.jsonl
+          cp .case-out/榜单数据.md /tmp/榜单数据.md
+          cp .case-out/榜单数据.jsonl /tmp/榜单数据.jsonl
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/story-cases/榜单数据.md data/story-cases/榜单数据.jsonl
-          if git diff --cached --quiet; then
-            echo "Case pool unchanged"
-            exit 0
-          fi
-          git commit -m "data: refresh story seed case pool"
-          git push origin HEAD:main
+
+          for attempt in 1 2 3; do
+            echo "Publish attempt $attempt/3"
+            git fetch origin main
+            git reset --hard origin/main
+            mkdir -p data/story-cases
+            cp /tmp/榜单数据.md data/story-cases/榜单数据.md
+            cp /tmp/榜单数据.jsonl data/story-cases/榜单数据.jsonl
+            git add data/story-cases/榜单数据.md data/story-cases/榜单数据.jsonl
+
+            if git diff --cached --quiet; then
+              echo "Case pool unchanged"
+              exit 0
+            fi
+
+            git commit -m "data: refresh cumulative story seed case pool"
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+
+            echo "Concurrent main update detected; retrying from latest main"
+            sleep 2
+          done
+
+          echo "::error::Failed to publish Case pool after 3 retries"
+          exit 1
