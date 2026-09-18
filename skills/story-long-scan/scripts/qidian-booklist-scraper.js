@@ -378,7 +378,8 @@ function main() {
   }
 
   fs.mkdirSync(OUTDIR, { recursive: true });
-  const filepath = path.join(OUTDIR, `起点关联书单_${localDateStamp()}.md`);
+  const filename = `起点关联书单_${localDateStamp()}.md`;
+  const filepath = path.join(OUTDIR, filename);
   fs.writeFileSync(
     filepath,
     renderMarkdown(cases, {
