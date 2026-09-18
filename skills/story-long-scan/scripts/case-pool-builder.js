@@ -2,9 +2,9 @@
 "use strict";
 
 /**
- * 把 story-long-scan 产生的榜单 Markdown 汇总为 Seed 可用 Case 池。
+ * 把榜单、关联书单与历史 Case Markdown 汇总为 Seed 可用 Case 池。
  *
- * 榜单只承担“市场预筛”作用。最终 Case 只保留：
+ * 榜单只承担“市场预筛”作用；关联书单负责扩展，历史池负责累积。最终 Case 只保留：
  *   - title
  *   - intro（完整简介，不摘要、不截断、不改写）
  *
@@ -131,11 +131,15 @@ function extractCasesFromMarkdown(markdown) {
   };
 
   for (const line of lines) {
-    const heading = line.match(/^#{2,4}\s+#\d+\s+(.+?)\s*$/u);
-    if (heading) {
+    const rawHeading = line.match(/^#{2,4}\s+#\d+\s+(.+?)\s*$/u);
+    const finalHeading = line.match(/^#{2,4}\s+《(.+?)》\s*$/u);
+
+    if (rawHeading || finalHeading) {
       flush();
-      currentTitle = heading[1];
-      capture = false;
+      currentTitle = rawHeading ? rawHeading[1] : finalHeading[1];
+      // 历史最终 Case 池没有 **简介** 标记，标题后正文就是完整简介。
+      // 允许它再次进入 Builder，才能实现跨日期“只增不减”的累积池。
+      capture = !!finalHeading;
       buffer = [];
       continue;
     }
@@ -147,10 +151,8 @@ function extractCasesFromMarkdown(markdown) {
     }
 
     if (capture) {
-      if (/^---\s*$/u.test(line) || /^#{2,4}\s+#\d+\s+/u.test(line)) {
+      if (/^---\s*$/u.test(line)) {
         flush();
-        const nextHeading = line.match(/^#{2,4}\s+#\d+\s+(.+?)\s*$/u);
-        if (nextHeading) currentTitle = nextHeading[1];
         continue;
       }
       buffer.push(line);
@@ -219,7 +221,7 @@ function buildCasePool(markdowns, minChars = 80) {
 function main() {
   const { inputs, outdir, minChars } = parseArgs(process.argv.slice(2));
   const files = [...new Set(inputs.flatMap((p) => collectMarkdownFiles(path.resolve(p))))].sort();
-  if (!files.length) throw new Error("没有找到可汇总的 Markdown 榜单文件");
+  if (!files.length) throw new Error("没有找到可汇总的 Case 源 Markdown");
 
   const markdowns = files.map((file) => fs.readFileSync(file, "utf8"));
   const result = buildCasePool(markdowns, minChars);
