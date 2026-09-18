@@ -62,7 +62,7 @@ metadata: {"openclaw":{"source":"https://github.com/zenstory-ai/oh-story-claudec
 4. 按规范格式写入 Markdown 文件
 5. 多榜单/多题材时，逐组采集并保存
 
-**输出规范**：详见 [references/scan-output-format.md](references/scan-output-format.md)，包含各平台字段定义、输出模板。
+**输出规范**：详见 [references/scan-output-format.md](references/scan-output-format.md)，包含各平台字段定义、输出模板。若目标不是市场分析，而是批量收集供故事 Seed 使用的真实作品 Case，改用 `story-case-collect`；榜单只负责预筛，最终只保留书名与完整简介。
 
 **起点采集目标**（优先运行 `node scripts/qidian-rank-scraper.js --type {榜单} --outdir {输出目录}`；默认 `--mode auto` 会先用 `https://m.qidian.com` 移动端 SSR，PC/CDP 只作回退）：
 
@@ -143,10 +143,10 @@ node scripts/jjwxc-rank-scraper.js --type 12 --list-only                 # 只�
 | 解析串行（同一条目出现两个不同作品的数据） | 标记 `[解析异常]`，删除并重新采集 |
 | 空字段（空白、`--`、`未知`） | 标记 `[待补]`，优先通过详情页补采 |
 
-**3. 简介截断**
+**3. 简介保真**
 
-- 清洗后超过 100 字的简介，在最近的句号/问号/感叹号处截断，加 `...`
-- 平台模板文本不计入 100 字限制（先删除模板，再截断）
+- 简介只允许删除明确的平台模板污染、折叠无意义空白。
+- **禁止按长度截断、摘要或改写简介。** 后续故事 Case 采集依赖完整简介还原创作运动。
 
 **4. 文件头质量状态**
 
