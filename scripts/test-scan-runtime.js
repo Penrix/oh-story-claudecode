@@ -611,7 +611,7 @@ function testQidianFieldContractAndDescriptionPreservation() {
 
 function testStoryCaseCollector() {
   const collector = loadFresh(
-    path.join(repoRoot, "skills/story-case-collect/scripts/case-pool-builder.js")
+    path.join(repoRoot, "skills/story-long-scan/scripts/case-pool-builder.js")
   );
 
   const longIntro =
