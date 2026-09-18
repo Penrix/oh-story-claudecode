@@ -734,6 +734,10 @@ function testQidianBooklistCollector() {
     "外站链接不能混入起点书单"
   );
   assert.match(scraper.buildBooklistLinksJS(), /包含本书的书单/);
+  assert.strictEqual(scraper.parseFollowerCount("999+关注"), 999);
+  assert.strictEqual(scraper.parseFollowerCount("1.2万关注"), 12000);
+  assert.strictEqual(scraper.parseFollowerCount("没有关注量"), 0);
+  assert.match(scraper.buildCatalogBooklistsJS(), /followers/);
   assert.match(scraper.buildBookIdsFromListJS(), /book\|info/);
   assert.match(scraper.buildBookDetailsJS(["1"]), /作品简介/);
 
