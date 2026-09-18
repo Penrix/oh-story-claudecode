@@ -41,6 +41,8 @@ const OUTDIR = getArg(args, "--outdir") || ".";
 const MAX_ANCHORS = parseInt(getArg(args, "--anchors") || "30", 10);
 const MAX_LISTS = parseInt(getArg(args, "--lists") || "60", 10);
 const MAX_BOOKS = parseInt(getArg(args, "--books") || "600", 10);
+const MAX_CATALOG_LISTS = parseInt(getArg(args, "--catalog-lists") || "30", 10);
+const MIN_LIST_FOLLOWERS = parseInt(getArg(args, "--min-list-followers") || "20", 10);
 const DETAIL_CHUNK = 6;
 
 function walkMarkdownFiles(target, out = []) {
@@ -101,6 +103,63 @@ function normalizeBooklistUrl(raw, base = "https://www.qidian.com/") {
     return u.toString();
   } catch {
     return "";
+  }
+}
+
+function parseFollowerCount(raw) {
+  const text = String(raw || "").replace(/\s+/g, "");
+  const match = text.match(/([\d.]+)\s*(万)?\+?关注/u);
+  if (!match) return 0;
+  const n = Number(match[1]);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(n * (match[2] ? 10000 : 1));
+}
+
+function buildCatalogBooklistsJS() {
+  return `JSON.stringify((function(){
+    function abs(h){try{return new URL(h,location.href).href}catch(e){return ''}}
+    var out=[];var seen={};
+    Array.from(document.querySelectorAll('a[href*="/booklist/"]')).forEach(function(a){
+      var u=abs(a.getAttribute('href')||a.href||'');
+      if(!u||seen[u])return;
+      var p='';
+      try{p=new URL(u).pathname}catch(e){return}
+      if(!/\\/booklist\\/detail\\//.test(p))return;
+      var box=a;
+      for(var i=0;i<5 && box && (box.innerText||'').length<20;i++)box=box.parentElement;
+      var t=(box&&box.innerText||a.innerText||'').replace(/\\s+/g,' ').trim();
+      var m=t.match(/([\\d.]+)\\s*(万)?\\+?关注/);
+      var followers=0;
+      if(m){followers=Math.round(Number(m[1])*(m[2]?10000:1));}
+      seen[u]=1;
+      out.push({url:u,title:(a.innerText||a.textContent||'').trim(),followers:followers,text:t.slice(0,300)});
+    });
+    return out;
+  })())`;
+}
+
+function discoverCatalogBooklists() {
+  if (MAX_CATALOG_LISTS <= 0) return [];
+  try {
+    ab(PORT, "open", "https://book.qidian.com/booklist/");
+    sleep(1600);
+    scrollLoad(PORT, 3, 350);
+    const rows = evalJSONBase64(PORT, buildCatalogBooklistsJS());
+    if (!Array.isArray(rows)) return [];
+    return rows
+      .map((row) => ({
+        url: normalizeBooklistUrl(row && row.url, "https://book.qidian.com/booklist/"),
+        title: cleanText(row && row.title),
+        followers: Number(row && row.followers) || parseFollowerCount(row && row.text),
+      }))
+      .filter((row) => row.url && row.followers >= MIN_LIST_FOLLOWERS)
+      .sort((a, b) => b.followers - a.followers)
+      .slice(0, MAX_CATALOG_LISTS);
+  } catch (error) {
+    console.error(
+      `  [qidian-booklist] 推荐书单目录发现失败：${error && error.message ? error.message : error}`
+    );
+    return [];
   }
 }
 
@@ -302,6 +361,21 @@ function discoverBooklists(anchorIds) {
     }
   }
 
+  // 第二条入口：起点推荐书单目录。只取有真实关注量的具体书单，
+  // 不扫“最新书单”洪流，避免把完全未经筛选的冷启动书单当成绩证据。
+  const curated = discoverCatalogBooklists();
+  for (const row of curated) {
+    if (urls.length >= MAX_LISTS) break;
+    if (seen.has(row.url)) continue;
+    seen.add(row.url);
+    urls.push(row.url);
+  }
+  if (curated.length) {
+    console.log(
+      `  ✓ 推荐目录补充 ${curated.length} 个书单（关注数 >= ${MIN_LIST_FOLLOWERS}）`
+    );
+  }
+
   return urls;
 }
 
@@ -411,8 +485,10 @@ if (require.main === module) {
 module.exports = {
   extractAnchorBookIdsFromMarkdown,
   normalizeBooklistUrl,
+  parseFollowerCount,
   cleanText,
   buildBooklistLinksJS,
+  buildCatalogBooklistsJS,
   buildBookIdsFromListJS,
   buildBookDetailsJS,
   renderMarkdown,
