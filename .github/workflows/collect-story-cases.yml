@@ -1,4 +1,4 @@
-name: Collect story seed cases
+name: Collect Qidian story seed cases
 
 on:
   workflow_dispatch:
@@ -59,36 +59,6 @@ jobs:
           npm install -g agent-browser
           node skills/browser-cdp/scripts/setup-cdp-chrome.js 9222
 
-      - name: Collect Fanqie and Qimao ranking anchors
-        shell: bash
-        run: |
-          set +e
-          node skills/story-long-scan/scripts/fanqie-rank-scraper.js \
-            --channel 1 \
-            --type all \
-            --top 20 \
-            --outdir .case-raw
-          fanqie_code=$?
-
-          node skills/story-long-scan/scripts/qimao-rank-scraper.js \
-            --channel male \
-            --type all \
-            --period all \
-            --outdir .case-raw
-          qimao_code=$?
-          set -e
-
-          echo "Fanqie exit: $fanqie_code"
-          echo "Qimao exit: $qimao_code"
-          # 0=完整成功，2=部分成功；两者都保留已采到的数据。
-          if [ "$fanqie_code" -ne 0 ] && [ "$fanqie_code" -ne 2 ]; then
-            echo "::warning::Fanqie ranking collection failed"
-          fi
-          if [ "$qimao_code" -ne 0 ] && [ "$qimao_code" -ne 2 ]; then
-            echo "::warning::Qimao ranking collection failed"
-          fi
-          exit 0
-
       - name: Expand ranked Qidian books through reader booklists
         shell: bash
         run: |
@@ -96,8 +66,10 @@ jobs:
           node skills/story-long-scan/scripts/qidian-booklist-scraper.js \
             --input .case-raw \
             --anchors 30 \
-            --lists 60 \
-            --books 600 \
+            --lists 100 \
+            --books 1000 \
+            --catalog-lists 40 \
+            --min-list-followers 20 \
             --outdir .case-raw
           code=$?
           set -e
