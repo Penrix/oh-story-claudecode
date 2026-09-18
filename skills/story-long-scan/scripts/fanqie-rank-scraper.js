@@ -201,10 +201,10 @@ function fmtStatus(s) {
   return s ? String(s) : "未知";
 }
 
-/** 清洗简介：去平台模板文本 → 折叠空白 → 句末截断 100 字 */
+/** 清洗简介：去平台模板文本 → 折叠空白；保留完整原始简介，不做长度截断。 */
 function cleanDesc(raw) {
   if (!raw) return "";
-  let d = String(raw)
+  return String(raw)
     // 简介取自 JSON 字符串原文，先还原常见转义（\n \uXXXX \" 等）
     .replace(/\\u([0-9a-fA-F]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
     .replace(/\\[nrt]/g, " ")
@@ -213,10 +213,6 @@ function cleanDesc(raw) {
     .replace(/番茄小说[^。！？]*?(?:免费阅读|完整版|在线阅读)[^。！？]*$/g, "")
     .replace(/\s+/g, " ")
     .trim();
-  if (d.length <= 100) return d;
-  const cut = d.slice(0, 100);
-  const m = cut.match(/^[\s\S]*[。！？]/);
-  return (m ? m[0] : cut) + "...";
 }
 
 // ---------------------------------------------------------------------------

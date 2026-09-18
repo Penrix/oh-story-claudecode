@@ -179,15 +179,11 @@ function isUsableBook(book) {
 }
 
 function cleanDesc(value) {
-  const text = String(value || "")
+  return String(value || "")
     .replace(/\s*(?:飙升|上升|下降)\s*\d+\s*名\s*$/g, "")
     .replace(/\s*(?:上一页|下一页)\s*$/g, "")
     .replace(/\s+/g, " ")
     .trim();
-  if (text.length <= 100) return text;
-  const cut = text.slice(0, 100);
-  const sentence = cut.match(/^[\s\S]*[。！？]/);
-  return (sentence ? sentence[0] : cut) + "...";
 }
 
 function summarizeQuality(books, rawCount) {
