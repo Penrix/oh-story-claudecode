@@ -203,6 +203,7 @@ function extractBooklistLinks(port = PORT) {
 function buildBookIdsFromListJS() {
   return `JSON.stringify((function(){
     var out=[];var seen={};
+    function txt(el){return el?(el.innerText||el.textContent||'').replace(/\\s+/g,' ').trim():''}
     Array.from(document.querySelectorAll('a[href]')).forEach(function(a){
       var href=a.getAttribute('href')||a.href||'';
       var u='';
@@ -211,9 +212,38 @@ function buildBookIdsFromListJS() {
       var m=u.match(/\\/(?:book|info)\\/(\\d+)\\/?/);
       if(!m)return;
       var id=m[1];
-      if(seen[id])return;seen[id]=1;
-      var title=(a.innerText||a.textContent||'').replace(/\\s+/g,' ').trim();
-      out.push({id:id,title:title,url:'https://www.qidian.com/book/'+id+'/'});
+      if(seen[id])return;
+
+      var title=txt(a);
+      if(!title || title.length>80)return;
+
+      var box=a.closest('li')||a.closest('[class*="book"]')||a.parentElement;
+      var intro='';
+      if(box){
+        var selectors=['p.intro','[class*="intro"]','[class*="desc"]','[class*="summary"]'];
+        for(var si=0;si<selectors.length&&!intro;si++){
+          var els=box.querySelectorAll(selectors[si]);
+          for(var ei=0;ei<els.length;ei++){
+            var t=txt(els[ei]);
+            if(t.length>=20 && t!==title){intro=t;break;}
+          }
+        }
+        if(!intro){
+          var ps=Array.from(box.querySelectorAll('p')).map(txt).filter(function(t){
+            return t.length>=30 && t!==title && t.indexOf('最近更新')!==0;
+          });
+          ps.sort(function(x,y){return y.length-x.length});
+          intro=ps[0]||'';
+        }
+      }
+
+      seen[id]=1;
+      out.push({
+        id:id,
+        title:title,
+        intro:intro,
+        url:'https://www.qidian.com/book/'+id+'/'
+      });
     });
     return out;
   })())`;
@@ -395,7 +425,7 @@ function collectBooksFromLists(listUrls, anchorIds) {
         const id = String(b.id || "");
         if (!id || seen.has(id)) continue;
         seen.add(id);
-        rows.push({ id, title: cleanText(b.title), url: b.url });
+        rows.push({ id, title: cleanText(b.title), intro: cleanText(b.intro), url: b.url });
         if (rows.length >= MAX_BOOKS) break;
       }
     } catch (error) {
@@ -432,17 +462,27 @@ function main() {
   }
   console.log(`  ✓ 书单扩展得到 ${candidates.length} 本新候选`);
 
-  // 打开同源起点作品页，随后批量 XHR 拉详情，避免逐本导航。
-  ab(PORT, "open", `https://www.qidian.com/book/${candidates[0].id}/`);
-  sleep(1500);
+  const missingDetail = candidates.filter((item) => !cleanText(item.intro));
+  let detailMap = {};
 
-  console.log("→ 批量获取书名 + 完整简介...");
-  const detailMap = fetchBookDetails(PORT, candidates.map((x) => x.id));
+  if (missingDetail.length) {
+    // 书单页通常已经带完整简介；只有页面结构没给到简介的条目才回详情页补，
+    // 避免几百本逐本详情请求造成频率限制。
+    ab(PORT, "open", `https://www.qidian.com/book/${missingDetail[0].id}/`);
+    sleep(1500);
+    console.log(
+      `→ 书单页已有简介 ${candidates.length - missingDetail.length}/${candidates.length}；补抓 ${missingDetail.length} 本详情...`
+    );
+    detailMap = fetchBookDetails(PORT, missingDetail.map((x) => x.id));
+  } else {
+    console.log(`→ 书单页已直接取得全部 ${candidates.length} 本简介，无需补抓详情`);
+  }
+
   const cases = [];
   for (const c of candidates) {
     const d = detailMap[c.id] || {};
     const title = cleanText(d.title || c.title);
-    const intro = cleanText(d.intro);
+    const intro = cleanText(c.intro || d.intro);
     if (!title || !intro) continue;
     cases.push({ title, intro, url: d.url || c.url });
   }
