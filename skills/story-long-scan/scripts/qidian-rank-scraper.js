@@ -347,13 +347,9 @@ function normalizeMobileBook(record, idx) {
   };
 }
 
-/** 清洗简介：折叠空白，超过 100 字时优先在句末截断。 */
+/** 清洗简介：只折叠空白，不截断原始简介。榜单 Case 采集依赖完整简介。 */
 function cleanDesc(raw) {
-  const desc = String(raw || "").replace(/\s+/g, " ").trim();
-  if (desc.length <= 100) return desc;
-  const cut = desc.slice(0, 100);
-  const sentence = cut.match(/^[\s\S]*[。！？]/);
-  return (sentence ? sentence[0] : cut) + "...";
+  return String(raw || "").replace(/\s+/g, " ").trim();
 }
 
 function renderMarkdown(rt, books, url, sourceMode, extraLines = []) {
