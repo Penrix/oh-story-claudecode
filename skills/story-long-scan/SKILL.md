@@ -60,19 +60,31 @@ metadata: {"openclaw":{"source":"https://github.com/Penrix/oh-story-claudecode"}
 
 ## 默认采集范围
 
-用户没有指定平台时，优先采中国商业长篇男频：
+当前主线默认：
 
 ```text
-起点
-+
-番茄男频
-+
-七猫男频
+只采起点
 ```
 
-这三个平台当前采集器都能稳定得到作品简介。
+先把起点的：
 
-晋江、刺猬猫现有脚本没有稳定输出作品完整简介，不作为默认 Case 来源。以后补齐详情页简介后再接入。
+```text
+榜单
+→
+作品详情
+→
+关联书单
+→
+书单继续扩展
+→
+历史累计 Case 池
+```
+
+做深、做稳、做大。
+
+番茄、七猫采集器继续保留在仓库中，作为后续平台扩展能力；**除非用户明确要求，现在不要让它们占用默认采集时间。**
+
+晋江、刺猬猫现有脚本没有稳定输出作品完整简介，也不进入当前默认 Case 来源。
 
 ---
 
@@ -431,6 +443,7 @@ Builder 会依次执行：
 | [scripts/qidian-booklist-scraper.js](scripts/qidian-booklist-scraper.js) | 从上榜起点作品发现关联读者书单并扩展作品 |
 | [scripts/case-pool-builder.js](scripts/case-pool-builder.js) | 榜单 + 书单 + 历史池去重、简介过滤、累计输出 |
 | [references/scan-output-format.md](references/scan-output-format.md) | 各平台原始采集字段与简介保真规则 |
+| [references/external-case-collection-references.md](references/external-case-collection-references.md) | 外部项目、相似思想、可借工程方案与明确不跟随的方向 |
 
 ---
 
