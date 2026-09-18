@@ -1176,15 +1176,10 @@ def validate_repository(repo_root: Path, manifest: ContractManifest) -> List[Fin
                 topic_file,
             )
         )
-    scan_skill = repo_root / "skills/story-long-scan/SKILL.md"
-    findings.extend(
-        require_pattern(
-            scan_skill,
-            r"^#{{2,6}}\s+Phase\s+{}[：:]\s*选题决策\s*$".format(manifest.topic_decision_phase),
-            "topic-decision-phase-heading",
-            "story-long-scan must expose topic decision as Phase {}".format(manifest.topic_decision_phase),
-        )
-    )
+    # Penrix fork: story-long-scan is a market-prefiltered Case collector.
+    # The legacy topic-decision reference remains version-checked for downstream
+    # consumers, but the scan skill itself must not expose a topic-decision phase:
+    # collecting title + full introduction is intentionally separated from analysis.
     for path in iter_files(repo_root / "skills"):
         if path.suffix.lower() != ".md":
             continue
