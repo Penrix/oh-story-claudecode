@@ -4,13 +4,17 @@ version: 1.1.0
 description: "从起点、番茄、七猫等真实网文榜单批量采集故事 Seed 可用 Case。榜单只负责市场预筛，最终只保留书名与完整、有内容的真实简介。触发方式：/story-long-scan、/长篇扫榜、/榜单采集、「大量采集榜单数据」「采集故事Case」。"
 metadata: {"openclaw":{"source":"https://github.com/Penrix/oh-story-claudecode"}}
 ---
-# story-long-scan：真实榜单 Case 采集
+# story-long-scan：市场过滤后的 Case 采集
 
 你的任务不是分析榜单，也不是总结市场趋势。
 
 榜单在这里只有一个作用：
 
-> **先用真实市场榜单过滤掉大量没有市场证明的作品，再从榜上作品中采集能够直接参加故事 Seed 创作的真实 Case。**
+> **充当第一层市场过滤条件。**
+
+榜单采完以后，不停在榜单里。
+
+继续使用这些已经被市场证明过的作品作为锚点，沿真实读者书单向外扩展更多作品，再把榜单 Case、书单 Case 与历史 Case 合并成一个持续增长的池子。
 
 最终 Case 只有：
 
@@ -28,10 +32,12 @@ metadata: {"openclaw":{"source":"https://github.com/Penrix/oh-story-claudecode"}
 
 1. **简介绝不截断。** 不允许 100 字截断，不允许摘要，不允许改写。
 2. **榜单只负责预筛。** 不按排名高低给 Case 加权，不做趋势分析，不做选题建议。
-3. **简介必须有内容。** 空简介、暂无简介、只有标签、只有一句很短宣传语的作品直接淘汰。
-4. **跨榜单去重。** 同名作品只留一份；若同名作品抓到多个简介版本，保留内容更完整的版本。
-5. **原始 Case 高于模型理解。** 采集阶段不提炼 Motion，不总结套路，不把简介压缩成理论。
-6. **最终输出保持极简。** 每个 Case 只输出书名和完整简介。
+3. **不区分新书旧书。** 新书榜、阅读榜、完结榜、月票榜等只是不同入口；一旦进入 Case 池，这些身份全部消失。
+4. **榜单采完继续采书单。** 优先从上榜作品详情页发现“包含本书的书单”，再从这些真实读者书单扩展其他作品。
+5. **简介必须有内容。** 空简介、暂无简介、只有标签、只有一句很短宣传语的作品直接淘汰。
+6. **全池去重并累积。** 榜单、书单、不同日期的历史池统一按书名去重；多个简介版本保留内容更完整的一份。
+7. **原始 Case 高于模型理解。** 采集阶段不提炼 Motion，不总结套路，不把简介压缩成理论。
+8. **最终输出保持极简。** 每个 Case 只输出书名和完整简介。
 
 ---
 
@@ -46,7 +52,7 @@ metadata: {"openclaw":{"source":"https://github.com/Penrix/oh-story-claudecode"}
 
 默认都解释为：
 
-> **批量采集经过真实市场榜单预筛的作品，取得完整书名 + 完整简介，过滤明显无内容简介，去重后形成 Case 池。**
+> **先用真实市场榜单取得一批已经有市场成绩的锚点作品，再顺着这些作品关联的真实读者书单继续扩展，取得完整书名 + 完整简介，与历史 Case 合并去重后形成持续增长的 Case 池。**
 
 除非用户明确要求市场分析，否则不要进入题材趋势、榜单排名、热度比较、选题推荐等流程。
 
@@ -100,15 +106,9 @@ node scripts/qidian-rank-scraper.js --type all --outdir {raw_dir}
 node scripts/fanqie-rank-scraper.js --channel 1 --type all --top 20 --outdir {raw_dir}
 ```
 
-默认同时采：
+默认把男频阅读榜、新书榜和全部可发现男频题材都当作**候选入口**采集。
 
-```text
-男频阅读榜
-+
-男频新书榜
-+
-全部可发现男频题材
-```
+这里不存在“新书更重要”或“旧书更重要”。两类作品进入原始目录后完全同权，后续只看它是否能提供可用的完整简介。
 
 如果用户明确要求女频或全频道，再改 `--channel`。
 
@@ -122,7 +122,56 @@ node scripts/qimao-rank-scraper.js --channel male --type all --period all --outd
 
 ---
 
-## Phase 2：完整简介保真
+## Phase 2：沿上榜作品继续采真实书单
+
+榜单阶段结束后，立刻进入书单扩展。
+
+当前第一条稳定路径使用起点：
+
+```text
+上榜起点作品
+↓
+作品详情页
+↓
+“包含本书的书单”
+↓
+真实读者书单
+↓
+书单中的其他作品
+↓
+作品详情页完整简介
+```
+
+执行：
+
+```bash
+node scripts/qidian-booklist-scraper.js \
+  --input {raw_dir} \
+  --anchors 30 \
+  --lists 60 \
+  --books 600 \
+  --outdir {raw_dir}
+```
+
+这一步的关键不是“书单本身有多权威”。
+
+榜单已经给了第一层市场过滤；书单只负责利用真实读者已经建立的作品关系继续向外扩展搜索空间。
+
+不要采“最新书单”然后把所有东西无条件吞进来。默认优先使用**包含已上榜作品的关联书单**。
+
+书单里的作品同样不区分：
+
+```text
+新书 / 老书
+连载 / 完结
+当前热门 / 曾经热门
+```
+
+只要最终能拿到足够完整、可用的真实简介，就进入后续统一过滤。
+
+---
+
+## Phase 3：完整简介保真
 
 三个主采集器的简介清洗都遵守同一原则：
 
@@ -145,13 +194,28 @@ node scripts/qimao-rank-scraper.js --channel male --type all --period all --outd
 
 ---
 
-## Phase 3：汇总成 Seed Case 池
+## Phase 4：与历史池合并成 Seed Case 池
 
-原始榜单抓完后运行：
+榜单与书单抓完后运行。
+
+第一次：
 
 ```bash
-node scripts/case-pool-builder.js --input {raw_dir} --outdir {case_dir}
+node scripts/case-pool-builder.js \
+  --input {raw_dir} \
+  --outdir {case_dir}
 ```
+
+以后每次采集都把上一次的最终池再次作为输入：
+
+```bash
+node scripts/case-pool-builder.js \
+  --input {raw_dir} \
+  --input {old_case_dir}/榜单数据.md \
+  --outdir {case_dir}
+```
+
+这样 Case 池只增不减；昨天独有的书不会因为今天跌出榜单而消失。
 
 默认最小有效内容长度：
 
@@ -171,17 +235,21 @@ node scripts/case-pool-builder.js --input {raw_dir} --min-chars 120 --outdir {ca
 Builder 会依次执行：
 
 ```text
-读取所有榜单 Markdown
+读取本轮榜单 Markdown
++
+本轮关联书单 Markdown
++
+历史最终 Case 池
 ↓
 提取书名 + 完整简介
 ↓
 淘汰空简介 / 占位简介 / 标签串 / 极短宣传语
 ↓
-按书名跨榜单去重
+按书名全池去重
 ↓
 同名多个版本保留内容更完整的简介
 ↓
-写出最终 Case 池
+写出新的累计 Case 池
 ```
 
 ---
@@ -264,15 +332,15 @@ Builder 会依次执行：
 
 我们只需要：
 
-> **市场榜单已经替我们完成第一层价值过滤；采集器只负责保证 Case 有足够内容可以使用。**
+> **市场榜单替我们完成第一层价值过滤；真实书单负责把这个已验证区域向外展开；采集器只负责保证 Case 有足够内容可以使用。**
 
 ---
 
-## 去重原则
+## 去重与累积原则
 
-榜单位置不是数据。
+榜单位置不是数据，书单位置也不是数据。
 
-同一本书同时出现在多个榜单，只算一个 Case。
+同一本书同时出现在多个榜单、多个书单、多个日期，只算一个 Case。
 
 默认按归一化书名去重：
 
@@ -327,17 +395,25 @@ Builder 会依次执行：
 
 ## 继续扩大数据量
 
-优先扩“真实榜单候选面”，不要增加无用字段。
+优先扩真实 Case 来源，不要增加无用字段。
 
-方向包括：
+顺序默认是：
 
 ```text
-更多榜单
-更多题材
-更多分页
-更多平台
-不同日期重复采集后只保留新作品
+更多有成绩的榜单入口
+↓
+更多上榜作品锚点
+↓
+更多关联真实书单
+↓
+更多书单内作品
+↓
+更多平台的书单关系
+↓
+不同日期重复采集并与历史池合并
 ```
+
+不要围绕“新书 / 旧书”建分类系统。这个维度对当前 Seed Case 池没有价值。
 
 任何扩展都必须继续满足：
 
@@ -352,7 +428,8 @@ Builder 会依次执行：
 | [scripts/qidian-rank-scraper.js](scripts/qidian-rank-scraper.js) | 起点榜单采集 |
 | [scripts/fanqie-rank-scraper.js](scripts/fanqie-rank-scraper.js) | 番茄榜单 + 详情页简介 |
 | [scripts/qimao-rank-scraper.js](scripts/qimao-rank-scraper.js) | 七猫榜单采集 |
-| [scripts/case-pool-builder.js](scripts/case-pool-builder.js) | 去重、简介可用性过滤、最终 Case 池输出 |
+| [scripts/qidian-booklist-scraper.js](scripts/qidian-booklist-scraper.js) | 从上榜起点作品发现关联读者书单并扩展作品 |
+| [scripts/case-pool-builder.js](scripts/case-pool-builder.js) | 榜单 + 书单 + 历史池去重、简介过滤、累计输出 |
 | [references/scan-output-format.md](references/scan-output-format.md) | 各平台原始采集字段与简介保真规则 |
 
 ---
