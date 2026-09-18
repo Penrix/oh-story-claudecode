@@ -552,8 +552,9 @@ function testQidianRankIsolation() {
 }
 
 // 起点：移动端已有的 cnt 必须作为独立字数字段输出；四个契约字段在两种模式下都要
-// 保持同一结构，拿不到就明确 [待补]，不能塞进 status 或静默省略。简介统一按 100 字清洗。
-function testQidianFieldContractAndDescriptionLimit() {
+// 保持同一结构，拿不到就明确 [待补]，不能塞进 status 或静默省略。
+// 简介必须完整保留，不能再为扫榜报告主动截断；故事 Case 采集依赖后半段信息。
+function testQidianFieldContractAndDescriptionPreservation() {
   const scraperPath = path.join(
     repoRoot,
     "skills/story-long-scan/scripts/qidian-rank-scraper.js"
@@ -594,8 +595,8 @@ function testQidianFieldContractAndDescriptionLimit() {
   assert.match(markdown, /总推荐：12345/);
   assert.match(markdown, /签约：已签约/);
   assert.match(markdown, /收费模式：VIP/);
-  assert(!markdown.includes(longDesc), "起点简介不得原样输出超过 100 字");
-  assert(qidian.cleanDesc(longDesc).length <= 103, "简介截断后只允许额外的 ...");
+  assert(markdown.includes(longDesc), "起点长简介必须完整保留");
+  assert.strictEqual(qidian.cleanDesc(longDesc), longDesc, "清洗不得截断简介");
 
   const missing = qidian.renderMarkdown(
     { label: "测试榜" },
@@ -606,6 +607,71 @@ function testQidianFieldContractAndDescriptionLimit() {
   for (const label of ["字数", "总推荐", "签约", "收费模式"]) {
     assert.match(missing, new RegExp(`${label}：\\[待补\\]`));
   }
+}
+
+function testStoryCaseCollector() {
+  const collector = loadFresh(
+    path.join(repoRoot, "skills/story-case-collect/scripts/case-pool-builder.js")
+  );
+
+  const longIntro =
+    "男主原本只是东京一家小公司的普通职员。一次意外后，他发现自己能听见别人做重大选择前的一句心声。" +
+    "他最初只想利用这个能力避开麻烦，却因为一次顺手的提醒改变了女邻居的人生，两人的关系也从陌生开始发生变化。" +
+    "随着能力不断把他卷进更多人的选择里，他原来的生活、工作和人与人之间的距离都被重新改写。";
+
+  assert(collector.isUsefulIntro(longIntro, 80), "有完整故事运动的简介必须保留");
+  assert(!collector.isUsefulIntro("重生东京，这一世我要活出精彩人生！", 80), "一句宣传语式简介必须淘汰");
+  assert(!collector.isUsefulIntro("【都市+重生+恋爱】", 80), "只有标签的简介必须淘汰");
+
+  const md = [
+    "# 番茄 · 男频阅读榜",
+    "",
+    "### #1 东京选择",
+    "*作者 · 都市*",
+    "",
+    "**简介**",
+    "",
+    longIntro,
+    "",
+    "---",
+    "",
+    "### #2 东京选择",
+    "",
+    "**简介**",
+    "",
+    longIntro + "后来，他第一次主动利用这种能力替自己争取机会。",
+    "",
+    "---",
+    "",
+    "### #3 空壳作品",
+    "",
+    "**简介**",
+    "",
+    "重生东京，这一世我要活出精彩人生！",
+    "",
+    "---",
+  ].join("\n");
+
+  const built = collector.buildCasePool([md], 80);
+  assert.strictEqual(built.stats.extracted, 3);
+  assert.strictEqual(built.stats.acceptedBeforeDedupe, 2);
+  assert.strictEqual(built.stats.duplicates, 1);
+  assert.strictEqual(built.stats.final, 1);
+  assert.strictEqual(built.cases[0].title, "东京选择");
+  assert.match(built.cases[0].intro, /主动利用这种能力/);
+  assert.deepStrictEqual(Object.keys(built.cases[0]).sort(), ["intro", "title"]);
+  assert.match(collector.renderCaseMarkdown(built.cases), /## 《东京选择》/);
+  assert(!collector.renderCaseMarkdown(built.cases).includes("作者"), "最终 Case 输出不得混入榜单元数据");
+
+  const fanqie = loadFresh(
+    path.join(repoRoot, "skills/story-long-scan/scripts/fanqie-rank-scraper.js")
+  );
+  const qimao = loadFresh(
+    path.join(repoRoot, "skills/story-long-scan/scripts/qimao-rank-scraper.js")
+  );
+  const veryLong = "第一段。" + "甲".repeat(180) + "最后一段。";
+  assert.strictEqual(fanqie.cleanDesc(veryLong), veryLong, "番茄简介不得截断");
+  assert.strictEqual(qimao.cleanDesc(veryLong), veryLong, "七猫简介不得截断");
 }
 
 // 七猫大热榜：日/月必须是显式采集维度，并进入文件名；非大热榜只采一次。
@@ -1440,7 +1506,8 @@ testScraperImports();
 testCliResultGate(longUtilsPath);
 testJjwxcDetailFailureIsolation();
 testQidianRankIsolation();
-testQidianFieldContractAndDescriptionLimit();
+testQidianFieldContractAndDescriptionPreservation();
+testStoryCaseCollector();
 testQimaoPeriodPlan();
 testQimaoPartialTargetStatus();
 testLongScanArgumentValidation();
