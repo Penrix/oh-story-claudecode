@@ -43,6 +43,7 @@ const MAX_LISTS = parseInt(getArg(args, "--lists") || "60", 10);
 const MAX_BOOKS = parseInt(getArg(args, "--books") || "600", 10);
 const MAX_CATALOG_LISTS = parseInt(getArg(args, "--catalog-lists") || "30", 10);
 const MIN_LIST_FOLLOWERS = parseInt(getArg(args, "--min-list-followers") || "20", 10);
+const HOP2_ANCHORS = parseInt(getArg(args, "--hop2-anchors") || "0", 10);
 const DETAIL_CHUNK = 6;
 
 function walkMarkdownFiles(target, out = []) {
@@ -263,6 +264,23 @@ function cleanText(raw) {
     .trim();
 }
 
+function selectSpread(items, limit) {
+  const source = Array.isArray(items) ? items : [];
+  const n = Math.max(0, Math.min(source.length, Number(limit) || 0));
+  if (!n) return [];
+  if (n === source.length) return source.slice();
+
+  const out = [];
+  const used = new Set();
+  for (let i = 0; i < n; i++) {
+    const index = Math.min(source.length - 1, Math.floor((i * source.length) / n));
+    if (used.has(index)) continue;
+    used.add(index);
+    out.push(source[index]);
+  }
+  return out;
+}
+
 function buildBookDetailsJS(ids) {
   return `JSON.stringify((function(){
     var ids=${JSON.stringify(ids)};
@@ -349,6 +367,8 @@ function renderMarkdown(cases, meta = {}) {
     "",
     `- 榜单锚点：${meta.anchorCount || 0} 本`,
     `- 发现书单：${meta.listCount || 0} 个`,
+    `- 二跳锚点：${meta.hop2AnchorCount || 0} 本`,
+    `- 二跳新增书单：${meta.hop2ListCount || 0} 个`,
     `- 书单候选：${meta.candidateCount || cases.length} 本`,
     `- 成功简介：${cases.length} 本`,
     `- 抓取时间：${new Date().toISOString()}`,
@@ -409,11 +429,12 @@ function discoverBooklists(anchorIds) {
   return urls;
 }
 
-function collectBooksFromLists(listUrls, anchorIds) {
+function collectBooksFromLists(listUrls, excludedIds, limit = MAX_BOOKS) {
   const rows = [];
-  const seen = new Set(anchorIds.map(String));
+  const seen = new Set((excludedIds || []).map(String));
+  const maxBooks = Math.max(0, Number(limit) || 0);
 
-  for (let i = 0; i < listUrls.length && rows.length < MAX_BOOKS; i++) {
+  for (let i = 0; i < listUrls.length && rows.length < maxBooks; i++) {
     const url = listUrls[i];
     console.log(`  [书单 ${i + 1}/${listUrls.length}] ${url}`);
     try {
@@ -426,7 +447,7 @@ function collectBooksFromLists(listUrls, anchorIds) {
         if (!id || seen.has(id)) continue;
         seen.add(id);
         rows.push({ id, title: cleanText(b.title), intro: cleanText(b.intro), url: b.url });
-        if (rows.length >= MAX_BOOKS) break;
+        if (rows.length >= maxBooks) break;
       }
     } catch (error) {
       console.error(
@@ -448,19 +469,55 @@ function main() {
     throw new Error("没有从原始起点榜单中找到可用作品 URL，无法建立书单锚点");
   }
 
-  console.log(`→ 用 ${anchorIds.length} 本上榜作品发现关联书单...`);
-  const listUrls = discoverBooklists(anchorIds);
-  if (!listUrls.length) {
+  console.log(`→ 用 ${anchorIds.length} 本上榜作品发现第一层关联书单...`);
+  const firstListUrls = discoverBooklists(anchorIds);
+  if (!firstListUrls.length) {
     throw new Error("上榜作品页没有发现可用的关联书单链接");
   }
-  console.log(`  ✓ 发现 ${listUrls.length} 个去重书单`);
+  console.log(`  ✓ 第一层发现 ${firstListUrls.length} 个去重书单`);
 
-  console.log("→ 从关联书单扩展作品...");
-  const candidates = collectBooksFromLists(listUrls, anchorIds);
-  if (!candidates.length) {
+  console.log("→ 从第一层书单扩展作品...");
+  const firstCandidates = collectBooksFromLists(firstListUrls, anchorIds, MAX_BOOKS);
+  if (!firstCandidates.length) {
     throw new Error("关联书单没有解析出新的起点作品");
   }
-  console.log(`  ✓ 书单扩展得到 ${candidates.length} 本新候选`);
+  console.log(`  ✓ 第一层书单得到 ${firstCandidates.length} 本新候选`);
+
+  const allLists = new Set(firstListUrls);
+  const candidateMap = new Map(firstCandidates.map((item) => [String(item.id), item]));
+  let hop2AnchorIds = [];
+  let hop2NewListCount = 0;
+
+  if (HOP2_ANCHORS > 0 && candidateMap.size < MAX_BOOKS) {
+    hop2AnchorIds = selectSpread(firstCandidates, HOP2_ANCHORS).map((item) => String(item.id));
+    if (hop2AnchorIds.length) {
+      console.log(`→ 从第一层候选中均匀抽 ${hop2AnchorIds.length} 本作为二跳锚点...`);
+      const hop2Lists = discoverBooklists(hop2AnchorIds);
+      const newHop2Lists = hop2Lists.filter((url) => {
+        if (allLists.has(url)) return false;
+        allLists.add(url);
+        return true;
+      });
+      hop2NewListCount = newHop2Lists.length;
+      console.log(`  ✓ 二跳新增 ${hop2NewListCount} 个书单`);
+
+      const remaining = Math.max(0, MAX_BOOKS - candidateMap.size);
+      if (remaining > 0 && newHop2Lists.length) {
+        const excluded = [...anchorIds, ...candidateMap.keys()];
+        const hop2Candidates = collectBooksFromLists(newHop2Lists, excluded, remaining);
+        for (const item of hop2Candidates) {
+          if (!candidateMap.has(String(item.id))) {
+            candidateMap.set(String(item.id), item);
+          }
+        }
+        console.log(`  ✓ 二跳新增 ${hop2Candidates.length} 本候选`);
+      }
+    }
+  }
+
+  const listUrls = [...allLists];
+  const candidates = [...candidateMap.values()];
+  console.log(`  ✓ 两层合计 ${listUrls.length} 个书单，${candidates.length} 本新候选`);
 
   const missingDetail = candidates.filter((item) => !cleanText(item.intro));
   let detailMap = {};
@@ -500,6 +557,8 @@ function main() {
       anchorCount: anchorIds.length,
       listCount: listUrls.length,
       candidateCount: candidates.length,
+      hop2AnchorCount: hop2AnchorIds.length,
+      hop2ListCount: hop2NewListCount,
     }),
     "utf8"
   );
@@ -527,6 +586,7 @@ module.exports = {
   normalizeBooklistUrl,
   parseFollowerCount,
   cleanText,
+  selectSpread,
   buildBooklistLinksJS,
   buildCatalogBooklistsJS,
   buildBookIdsFromListJS,
