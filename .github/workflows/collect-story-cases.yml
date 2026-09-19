@@ -11,10 +11,14 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: qidian-story-case-collection
+  cancel-in-progress: false
+
 jobs:
   collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 75
     steps:
       - name: Checkout fork
         uses: actions/checkout@v4
@@ -65,11 +69,12 @@ jobs:
           set +e
           node skills/story-long-scan/scripts/qidian-booklist-scraper.js \
             --input .case-raw \
-            --anchors 30 \
-            --lists 100 \
-            --books 1000 \
-            --catalog-lists 40 \
-            --min-list-followers 20 \
+            --anchors 70 \
+            --lists 160 \
+            --books 1200 \
+            --catalog-lists 80 \
+            --min-list-followers 10 \
+            --hop2-anchors 40 \
             --outdir .case-raw
           code=$?
           set -e
