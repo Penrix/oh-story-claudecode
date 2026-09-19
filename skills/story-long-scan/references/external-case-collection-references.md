@@ -256,10 +256,7 @@ GitHub：
 
 - https://github.com/lornshrimp/Lorn.NovelWriteSkills
 
-重点文档：
-
-- `CommonSkills/通用-分析竞对作品/SKILL.md`
-- `CommonSkills/通用-分析竞对作品/references/榜单检索与样本池确定规则.md`
+重点文档是它仓库中的“通用-分析竞对作品” Skill，以及配套的“榜单检索与样本池确定规则”参考文档。
 
 ### 它已经做过什么
 
