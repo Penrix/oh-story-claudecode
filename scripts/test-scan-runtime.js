@@ -740,6 +740,14 @@ function testQidianBooklistCollector() {
   assert.match(scraper.buildCatalogBooklistsJS(), /followers/);
   assert.match(scraper.buildBookIdsFromListJS(), /book\|info/);
   assert.match(scraper.buildBookDetailsJS(["1"]), /作品简介/);
+  assert.deepStrictEqual(
+    scraper.selectSpread(
+      Array.from({ length: 10 }, (_, index) => ({ id: String(index + 1) })),
+      4
+    ).map((item) => item.id),
+    ["1", "3", "6", "8"],
+    "二跳锚点必须均匀覆盖第一层候选，而不是只拿开头几本"
+  );
 
   const intro =
     "主角在一次失败后离开原来的行业，本想回乡过普通生活，却在整理旧书时发现父亲留下的一份名单。" +
@@ -747,9 +755,11 @@ function testQidianBooklistCollector() {
     "每找到一个人，他都会得到一段过去从未知道的关系，也让自己的人生重新拥有可以下注的机会。";
   const rendered = scraper.renderMarkdown(
     [{ title: "书单扩展样书", intro, url: "https://www.qidian.com/book/1/" }],
-    { anchorCount: 3, listCount: 5, candidateCount: 9 }
+    { anchorCount: 3, listCount: 5, candidateCount: 9, hop2AnchorCount: 2, hop2ListCount: 4 }
   );
   assert.match(rendered, /# 起点 · 上榜作品关联书单扩展/);
+  assert.match(rendered, /二跳锚点：2 本/);
+  assert.match(rendered, /二跳新增书单：4 个/);
   assert.match(rendered, /## #1 书单扩展样书/);
   const built = collector.buildCasePool([rendered], 80);
   assert.strictEqual(built.stats.final, 1);
