@@ -99,13 +99,14 @@ function evaluateIntro(intro, minChars = 80) {
   if (chars < minChars) return { ok: false, reason: "short" };
 
   const sentenceCount = body
-    .split(/[。！？!?；;]/u)
+    .split(/[。！？!?]+/u)
     .map((x) => x.trim())
     .filter(Boolean).length;
 
-  // 防止“只有一句宣传语但碰巧比较长”。足够长的单句仍保留，避免误杀真实简介。
-  if (sentenceCount < 2 && chars < Math.ceil(minChars * 1.6)) {
-    return { ok: false, reason: "thin" };
+  // Seed Case 需要能看见至少两拍真实叙述。哪怕单句写得很长，只要仍然只有一句，
+  // 信息密度也不足以支撑后续重演；不要用长度豁免它。
+  if (sentenceCount < 2) {
+    return { ok: false, reason: "singleSentence" };
   }
 
   return { ok: true, reason: "ok" };
@@ -197,7 +198,7 @@ function renderCaseMarkdown(cases) {
 function buildCasePool(markdowns, minChars = 80) {
   const extracted = markdowns.flatMap(extractCasesFromMarkdown);
   const accepted = [];
-  const rejected = { empty: 0, placeholder: 0, short: 0, thin: 0 };
+  const rejected = { empty: 0, placeholder: 0, short: 0, singleSentence: 0 };
 
   for (const item of extracted) {
     const verdict = evaluateIntro(item.intro, minChars);
@@ -243,7 +244,7 @@ function main() {
   console.log(`去重：${s.duplicates}`);
   console.log(`最终 Case：${s.final}`);
   console.log(
-    `淘汰：empty=${s.rejected.empty || 0}, placeholder=${s.rejected.placeholder || 0}, short=${s.rejected.short || 0}, thin=${s.rejected.thin || 0}`
+    `淘汰：empty=${s.rejected.empty || 0}, placeholder=${s.rejected.placeholder || 0}, short=${s.rejected.short || 0}, singleSentence=${s.rejected.singleSentence || 0}`
   );
   console.log(`已写入：${mdPath}`);
   console.log(`已写入：${jsonlPath}`);
