@@ -32,8 +32,8 @@ jobs:
 
       - name: Prepare directories
         run: |
-          rm -rf .case-raw .case-out
-          mkdir -p .case-raw .case-out
+          rm -rf .case-raw .case-out .case-state
+          mkdir -p .case-raw .case-out .case-state
 
       - name: Collect Qidian ranking anchors
         shell: bash
@@ -66,9 +66,17 @@ jobs:
       - name: Expand ranked Qidian books through reader booklists
         shell: bash
         run: |
+          pending_args=()
+          if [ -f data/story-cases/起点待补简介.jsonl ]; then
+            echo "Retrying persisted missing-intro queue first"
+            pending_args+=(--pending data/story-cases/起点待补简介.jsonl)
+          fi
+
           set +e
           node skills/story-long-scan/scripts/qidian-booklist-scraper.js \
             --input .case-raw \
+            "${pending_args[@]}" \
+            --pending-out .case-state/起点待补简介.jsonl \
             --anchors 70 \
             --lists 160 \
             --books 1200 \
@@ -103,6 +111,65 @@ jobs:
           grep -c '^## 《' .case-out/榜单数据.md || true
           printf 'JSONL cases: '
           wc -l < .case-out/榜单数据.jsonl
+          printf 'Pending intros: '
+          if [ -f .case-state/起点待补简介.jsonl ]; then
+            grep -cve '^
+
+      - name: Upload Case artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: story-seed-cases
+          path: |
+            .case-out/榜单数据.md
+            .case-out/榜单数据.jsonl
+            .case-state/起点待补简介.jsonl
+
+      - name: Publish cumulative Case pool to fork
+        shell: bash
+        run: |
+          cp .case-out/榜单数据.md /tmp/榜单数据.md
+          cp .case-out/榜单数据.jsonl /tmp/榜单数据.jsonl
+          if [ -f .case-state/起点待补简介.jsonl ]; then
+            cp .case-state/起点待补简介.jsonl /tmp/起点待补简介.jsonl
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          for attempt in 1 2 3; do
+            echo "Publish attempt $attempt/3"
+            git fetch origin main
+            git reset --hard origin/main
+            mkdir -p data/story-cases
+            cp /tmp/榜单数据.md data/story-cases/榜单数据.md
+            cp /tmp/榜单数据.jsonl data/story-cases/榜单数据.jsonl
+            if [ -f /tmp/起点待补简介.jsonl ]; then
+              cp /tmp/起点待补简介.jsonl data/story-cases/起点待补简介.jsonl
+            fi
+            git add data/story-cases/榜单数据.md data/story-cases/榜单数据.jsonl
+            if [ -f data/story-cases/起点待补简介.jsonl ]; then
+              git add data/story-cases/起点待补简介.jsonl
+            fi
+
+            if git diff --cached --quiet; then
+              echo "Case pool unchanged"
+              exit 0
+            fi
+
+            git commit -m "data: refresh cumulative story seed case pool"
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+
+            echo "Concurrent main update detected; retrying from latest main"
+            sleep 2
+          done
+
+          echo "::error::Failed to publish Case pool after 3 retries"
+          exit 1
+ .case-state/起点待补简介.jsonl || true
+          else
+            echo 0
+          fi
 
       - name: Upload Case artifact
         uses: actions/upload-artifact@v4
