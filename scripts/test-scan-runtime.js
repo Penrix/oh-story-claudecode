@@ -621,6 +621,16 @@ function testStoryCaseCollector() {
 
   assert(collector.isUsefulIntro(longIntro, 80), "有完整故事运动的简介必须保留");
   assert(!collector.isUsefulIntro("重生东京，这一世我要活出精彩人生！", 80), "一句宣传语式简介必须淘汰");
+  const longSingleSentence =
+    "男主回到十年前最落魄的一天，带着未来十年的行业经验重新进入互联网公司，一路利用自己知道的产品周期、人才流动、资本变化和竞争对手弱点抢占机会并重新安排人生".repeat(2) + "。";
+  assert(
+    !collector.isUsefulIntro(longSingleSentence, 80),
+    "哪怕超过最小长度，只要仍然只有一句话，也不能进入 Case 池"
+  );
+  assert.strictEqual(
+    collector.evaluateIntro(longSingleSentence, 80).reason,
+    "singleSentence"
+  );
   assert(!collector.isUsefulIntro("【都市+重生+恋爱】", 80), "只有标签的简介必须淘汰");
 
   const md = [
