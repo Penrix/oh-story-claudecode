@@ -749,6 +749,42 @@ function testQidianBooklistCollector() {
     "二跳锚点必须均匀覆盖第一层候选，而不是只拿开头几本"
   );
 
+  const pendingText = [
+    JSON.stringify({
+      book_id: "1050000001",
+      title: "待补样书",
+      url: "https://www.qidian.com/book/1050000001/",
+      first_seen: "20260919",
+      attempts: 2,
+    }),
+    JSON.stringify({
+      book_id: "1050000001",
+      title: "待补样书（更完整标题）",
+      url: "https://www.qidian.com/book/1050000001/",
+      first_seen: "20260920",
+      attempts: 3,
+    }),
+    "{bad json",
+    "",
+  ].join("\n");
+  const parsedPending = scraper.parsePendingJSONL(pendingText);
+  assert.strictEqual(parsedPending.length, 1, "同一 book_id 在待补队列中必须去重");
+  assert.strictEqual(parsedPending[0].book_id, "1050000001");
+  assert.strictEqual(parsedPending[0].title, "待补样书（更完整标题）");
+  assert.strictEqual(parsedPending[0].first_seen, "20260919", "首次发现日期必须保留");
+  assert.strictEqual(parsedPending[0].attempts, 3, "重试次数取已知最大值");
+
+  const retriedPending = scraper.toPendingRecord(
+    { id: "1050000001", title: "待补样书" },
+    parsedPending[0],
+    true
+  );
+  assert.strictEqual(retriedPending.attempts, 4, "每次真实补抓失败后重试次数加一");
+  const pendingRoundTrip = scraper.parsePendingJSONL(
+    scraper.renderPendingJSONL([retriedPending])
+  );
+  assert.deepStrictEqual(pendingRoundTrip, [retriedPending]);
+
   const intro =
     "主角在一次失败后离开原来的行业，本想回乡过普通生活，却在整理旧书时发现父亲留下的一份名单。" +
     "名单上的每个人都曾在同一年改变命运，他决定逐个找到他们，由此重新进入早已离开的商业世界。" +
