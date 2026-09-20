@@ -184,7 +184,7 @@ node scripts/qidian-booklist-scraper.js \
 
 ---
 
-## Phase 2.5：持久化待补简介队列
+## Phase 3：持久化待补简介队列
 
 书单中已经发现、但暂时没有拿到完整简介的作品，不再作为一次性失败丢弃。
 
@@ -236,7 +236,7 @@ data/story-cases/起点待补简介.jsonl
 
 ---
 
-## Phase 3：完整简介保真
+## Phase 4：完整简介保真
 
 三个主采集器的简介清洗都遵守同一原则：
 
@@ -259,7 +259,7 @@ data/story-cases/起点待补简介.jsonl
 
 ---
 
-## Phase 4：与历史池合并成 Seed Case 池
+## Phase 5：与历史池合并成 Seed Case 池
 
 榜单与书单抓完后运行。
 
