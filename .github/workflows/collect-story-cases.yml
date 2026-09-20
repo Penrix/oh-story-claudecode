@@ -92,6 +92,7 @@ jobs:
           exit 0
 
       - name: Build cumulative Seed Case pool
+        # Seed Case 简介必须至少两句；单句无论多长都由 builder 淘汰。
         shell: bash
         run: |
           inputs=(--input .case-raw)
