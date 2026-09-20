@@ -44,6 +44,8 @@ const MAX_BOOKS = parseInt(getArg(args, "--books") || "600", 10);
 const MAX_CATALOG_LISTS = parseInt(getArg(args, "--catalog-lists") || "30", 10);
 const MIN_LIST_FOLLOWERS = parseInt(getArg(args, "--min-list-followers") || "20", 10);
 const HOP2_ANCHORS = parseInt(getArg(args, "--hop2-anchors") || "0", 10);
+const PENDING_INPUT = getArg(args, "--pending") || "";
+const PENDING_OUT = getArg(args, "--pending-out") || path.join(OUTDIR, "起点待补简介.jsonl");
 const DETAIL_CHUNK = 6;
 
 function walkMarkdownFiles(target, out = []) {
@@ -459,9 +461,148 @@ function collectBooksFromLists(listUrls, excludedIds, limit = MAX_BOOKS) {
   return rows;
 }
 
+
+function normalizePendingItem(raw, fallback = {}) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const id = String(source.book_id || source.id || fallback.book_id || fallback.id || "").trim();
+  if (!/^\d+$/.test(id)) return null;
+
+  const attemptsRaw = Number(source.attempts);
+  return {
+    book_id: id,
+    title: cleanText(source.title || fallback.title),
+    url: cleanText(source.url || fallback.url) || `https://www.qidian.com/book/${id}/`,
+    first_seen: String(source.first_seen || fallback.first_seen || "").trim(),
+    attempts: Number.isFinite(attemptsRaw) && attemptsRaw >= 0 ? Math.floor(attemptsRaw) : 0,
+  };
+}
+
+function parsePendingJSONL(text) {
+  const out = new Map();
+  for (const rawLine of String(text || "").split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    let parsed;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const item = normalizePendingItem(parsed);
+    if (!item) continue;
+
+    const old = out.get(item.book_id);
+    if (!old) {
+      out.set(item.book_id, item);
+      continue;
+    }
+    out.set(item.book_id, {
+      book_id: item.book_id,
+      title: item.title.length > old.title.length ? item.title : old.title,
+      url: item.url || old.url,
+      first_seen: old.first_seen || item.first_seen,
+      attempts: Math.max(old.attempts, item.attempts),
+    });
+  }
+  return [...out.values()];
+}
+
+function loadPendingQueue(filepath) {
+  if (!filepath) return [];
+  const resolved = path.resolve(filepath);
+  if (!fs.existsSync(resolved)) return [];
+  return parsePendingJSONL(fs.readFileSync(resolved, "utf8"));
+}
+
+function toPendingRecord(item, previous = null, attempted = false) {
+  const normalized = normalizePendingItem(item, previous || {});
+  if (!normalized) return null;
+  const old = previous ? normalizePendingItem(previous) : null;
+  return {
+    book_id: normalized.book_id,
+    title:
+      normalized.title.length >= String((old && old.title) || "").length
+        ? normalized.title
+        : old.title,
+    url: normalized.url || (old && old.url) || `https://www.qidian.com/book/${normalized.book_id}/`,
+    first_seen: (old && old.first_seen) || normalized.first_seen || localDateStamp(),
+    attempts: (old ? old.attempts : normalized.attempts) + (attempted ? 1 : 0),
+  };
+}
+
+function renderPendingJSONL(items) {
+  const seen = new Set();
+  const lines = [];
+  for (const raw of Array.isArray(items) ? items : []) {
+    const item = normalizePendingItem(raw);
+    if (!item || seen.has(item.book_id)) continue;
+    seen.add(item.book_id);
+    lines.push(JSON.stringify(item));
+  }
+  return lines.length ? lines.join("\n") + "\n" : "";
+}
+
+function writePendingQueue(filepath, items) {
+  const resolved = path.resolve(filepath);
+  fs.mkdirSync(path.dirname(resolved), { recursive: true });
+  fs.writeFileSync(resolved, renderPendingJSONL(items), "utf8");
+  return resolved;
+}
+
 function main() {
   if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
     throw new Error("非法 --port");
+  }
+
+  fs.mkdirSync(OUTDIR, { recursive: true });
+
+  const historicalPending = loadPendingQueue(PENDING_INPUT);
+  const historicalPendingById = new Map(
+    historicalPending.map((item) => [String(item.book_id), item])
+  );
+  const finalPending = new Map();
+  const cases = [];
+
+  // 先把历史队列复制到本轮输出。后面的任何页面/详情失败都不会再把已发现候选弄丢。
+  writePendingQueue(PENDING_OUT, historicalPending);
+
+  if (historicalPending.length) {
+    console.log(`→ 优先重试历史待补简介队列：${historicalPending.length} 本...`);
+    let retryDetails = {};
+    try {
+      ab(PORT, "open", historicalPending[0].url);
+      sleep(1200);
+      retryDetails = fetchBookDetails(
+        PORT,
+        historicalPending.map((item) => item.book_id)
+      );
+    } catch (error) {
+      console.error(
+        `  [qidian-booklist] 历史待补队列重试失败：${error && error.message ? error.message : error}`
+      );
+    }
+
+    let recovered = 0;
+    for (const item of historicalPending) {
+      const d = retryDetails[item.book_id] || {};
+      const title = cleanText(d.title || item.title);
+      const intro = cleanText(d.intro);
+      if (title && intro) {
+        cases.push({ title, intro, url: d.url || item.url });
+        recovered++;
+        continue;
+      }
+      const pending = toPendingRecord(
+        { ...item, title: title || item.title, url: d.url || item.url },
+        item,
+        true
+      );
+      if (pending) finalPending.set(pending.book_id, pending);
+    }
+    writePendingQueue(PENDING_OUT, [...finalPending.values()]);
+    console.log(
+      `  ✓ 历史队列补回 ${recovered} 本；仍待补 ${finalPending.size} 本`
+    );
   }
 
   const anchorIds = collectAnchorBookIds(INPUT, MAX_ANCHORS);
@@ -476,9 +617,14 @@ function main() {
   }
   console.log(`  ✓ 第一层发现 ${firstListUrls.length} 个去重书单`);
 
+  const historicalPendingIds = historicalPending.map((item) => item.book_id);
   console.log("→ 从第一层书单扩展作品...");
-  const firstCandidates = collectBooksFromLists(firstListUrls, anchorIds, MAX_BOOKS);
-  if (!firstCandidates.length) {
+  const firstCandidates = collectBooksFromLists(
+    firstListUrls,
+    [...anchorIds, ...historicalPendingIds],
+    MAX_BOOKS
+  );
+  if (!firstCandidates.length && !cases.length && !finalPending.size) {
     throw new Error("关联书单没有解析出新的起点作品");
   }
   console.log(`  ✓ 第一层书单得到 ${firstCandidates.length} 本新候选`);
@@ -488,7 +634,7 @@ function main() {
   let hop2AnchorIds = [];
   let hop2NewListCount = 0;
 
-  if (HOP2_ANCHORS > 0 && candidateMap.size < MAX_BOOKS) {
+  if (HOP2_ANCHORS > 0 && candidateMap.size < MAX_BOOKS && firstCandidates.length) {
     hop2AnchorIds = selectSpread(firstCandidates, HOP2_ANCHORS).map((item) => String(item.id));
     if (hop2AnchorIds.length) {
       console.log(`→ 从第一层候选中均匀抽 ${hop2AnchorIds.length} 本作为二跳锚点...`);
@@ -503,7 +649,11 @@ function main() {
 
       const remaining = Math.max(0, MAX_BOOKS - candidateMap.size);
       if (remaining > 0 && newHop2Lists.length) {
-        const excluded = [...anchorIds, ...candidateMap.keys()];
+        const excluded = [
+          ...anchorIds,
+          ...historicalPendingIds,
+          ...candidateMap.keys(),
+        ];
         const hop2Candidates = collectBooksFromLists(newHop2Lists, excluded, remaining);
         for (const item of hop2Candidates) {
           if (!candidateMap.has(String(item.id))) {
@@ -519,60 +669,91 @@ function main() {
   const candidates = [...candidateMap.values()];
   console.log(`  ✓ 两层合计 ${listUrls.length} 个书单，${candidates.length} 本新候选`);
 
+  // 在真正补详情之前，先把所有“当前没有简介”的新候选写进持久化队列。
+  // 即使接下来起点详情页整体失效，这批 book_id 也已经安全落盘。
+  for (const item of candidates) {
+    if (cleanText(item.intro)) continue;
+    const pending = toPendingRecord(item, historicalPendingById.get(String(item.id)), false);
+    if (pending) finalPending.set(pending.book_id, pending);
+  }
+  writePendingQueue(PENDING_OUT, [...finalPending.values()]);
+  console.log(`  ✓ 详情补抓前已持久化待补队列：${finalPending.size} 本`);
+
   const missingDetail = candidates.filter((item) => !cleanText(item.intro));
   let detailMap = {};
 
   if (missingDetail.length) {
-    // 书单页通常已经带完整简介；只有页面结构没给到简介的条目才回详情页补，
-    // 避免几百本逐本详情请求造成频率限制。
-    ab(PORT, "open", `https://www.qidian.com/book/${missingDetail[0].id}/`);
-    sleep(1500);
-    console.log(
-      `→ 书单页已有简介 ${candidates.length - missingDetail.length}/${candidates.length}；补抓 ${missingDetail.length} 本详情...`
-    );
-    detailMap = fetchBookDetails(PORT, missingDetail.map((x) => x.id));
-  } else {
+    try {
+      ab(PORT, "open", `https://www.qidian.com/book/${missingDetail[0].id}/`);
+      sleep(1500);
+      console.log(
+        `→ 书单页已有简介 ${candidates.length - missingDetail.length}/${candidates.length}；补抓 ${missingDetail.length} 本详情...`
+      );
+      detailMap = fetchBookDetails(PORT, missingDetail.map((x) => x.id));
+    } catch (error) {
+      console.error(
+        `  [qidian-booklist] 本轮详情补抓失败，候选已保存在待补队列：${error && error.message ? error.message : error}`
+      );
+    }
+  } else if (candidates.length) {
     console.log(`→ 书单页已直接取得全部 ${candidates.length} 本简介，无需补抓详情`);
   }
 
-  const cases = [];
   for (const c of candidates) {
     const d = detailMap[c.id] || {};
     const title = cleanText(d.title || c.title);
     const intro = cleanText(c.intro || d.intro);
-    if (!title || !intro) continue;
-    cases.push({ title, intro, url: d.url || c.url });
+    if (title && intro) {
+      cases.push({ title, intro, url: d.url || c.url });
+      finalPending.delete(String(c.id));
+      continue;
+    }
+    const old =
+      finalPending.get(String(c.id)) ||
+      historicalPendingById.get(String(c.id)) ||
+      null;
+    const pending = toPendingRecord(
+      { ...c, title: title || c.title, url: d.url || c.url },
+      old,
+      true
+    );
+    if (pending) finalPending.set(pending.book_id, pending);
   }
 
-  if (!cases.length) {
-    throw new Error("书单候选详情页没有解析出可用简介");
+  writePendingQueue(PENDING_OUT, [...finalPending.values()]);
+  console.log(`  ✓ 待补简介队列：${finalPending.size} 本`);
+
+  let wroteCaseFile = false;
+  if (cases.length) {
+    const filename = `起点关联书单_${localDateStamp()}.md`;
+    const filepath = path.join(OUTDIR, filename);
+    fs.writeFileSync(
+      filepath,
+      renderMarkdown(cases, {
+        anchorCount: anchorIds.length,
+        listCount: listUrls.length,
+        candidateCount: candidates.length,
+        hop2AnchorCount: hop2AnchorIds.length,
+        hop2ListCount: hop2NewListCount,
+      }),
+      "utf8"
+    );
+    wroteCaseFile = true;
+    console.log(`  ✓ 已保存: ${filepath}`);
+  } else {
+    console.log("  ↳ 本轮书单候选尚未补回可用简介；已全部保留在待补队列");
   }
 
-  fs.mkdirSync(OUTDIR, { recursive: true });
-  const filename = `起点关联书单_${localDateStamp()}.md`;
-  const filepath = path.join(OUTDIR, filename);
-  fs.writeFileSync(
-    filepath,
-    renderMarkdown(cases, {
-      anchorCount: anchorIds.length,
-      listCount: listUrls.length,
-      candidateCount: candidates.length,
-      hop2AnchorCount: hop2AnchorIds.length,
-      hop2ListCount: hop2NewListCount,
-    }),
-    "utf8"
-  );
-  console.log(`  ✓ 已保存: ${filepath}`);
-  console.log(`  ✓ 完整简介：${cases.length}/${candidates.length}`);
+  console.log(`  ✓ 本轮取得简介：${cases.length} 本`);
 
   return {
-    planned: 1,
-    written: 1,
+    planned: 2,
+    written: 1 + (wroteCaseFile ? 1 : 0),
     failed: 0,
-    partial: cases.length < candidates.length,
+    partial: finalPending.size > 0,
     partialReasons:
-      cases.length < candidates.length
-        ? [`detail-missing=${candidates.length - cases.length}`]
+      finalPending.size > 0
+        ? [`pending-intro=${finalPending.size}`]
         : [],
   };
 }
@@ -587,6 +768,10 @@ module.exports = {
   parseFollowerCount,
   cleanText,
   selectSpread,
+  normalizePendingItem,
+  parsePendingJSONL,
+  toPendingRecord,
+  renderPendingJSONL,
   buildBooklistLinksJS,
   buildCatalogBooklistsJS,
   buildBookIdsFromListJS,
