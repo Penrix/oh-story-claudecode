@@ -765,6 +765,11 @@ function testCiweimaoFullIntroParser() {
     false,
     "刺猬猫女频分类必须在进入 Case Builder 前就被排除"
   );
+  assert.strictEqual(
+    scraper.isAllowedCategory(""),
+    false,
+    "刺猬猫分类解析失败时必须 fail closed，宁可漏收也不能误放女频"
+  );
   assert.match(scraper.buildMIPPageTextJS(), /document\.body/);
 }
 
