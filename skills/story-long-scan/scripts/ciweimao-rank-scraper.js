@@ -3,7 +3,11 @@
  * 刺猬猫阅读排行榜采集脚本
  *
  * 配合 browser-cdp skill 使用。先启动 Chrome CDP 环境，再运行本脚本。
- * 采集策略：刺猬猫 rank-index 页面单页展示所有榜单，文本解析提取结构化数据。
+ * 采集策略：
+ *   1. 从 rank-index 榜单页解析书名、排名和作品链接；
+ *   2. 对榜单作品去重后进入公开 MIP 详情页，提取真实完整简介与平台分类；
+ *   3. 明确属于“女频”的作品不写入原始 Case；
+ *   4. 最终简介仍交给统一 Case Builder 做“至少两句 + 最小有效内容长度”过滤。
  * 输出 Markdown 格式匹配 scan-output-format.md 规范。
  *
  * 用法：
@@ -20,6 +24,8 @@ const path = require("path");
 const { ab, sleep, evalJSONBase64, scrollLoad, getArg, localDateStamp, runCli } = require("./cdp-utils");
 
 const RANK_URL = "https://www.ciweimao.com/rank-index";
+const MIP_BOOK_BASE = "https://mip.ciweimao.com/book/";
+const DETAIL_SLEEP_MS = 650;
 
 /** 连通性 + 页面就绪自检 */
 function probePage(port) {
@@ -113,6 +119,113 @@ function extractBookUrls(port) {
   return evalJSONBase64(port, js) || [];
 }
 
+/**
+ * MIP 详情页是公开静态页，正文文本大致为：
+ *   书名
+ *   作者 著 / 分类
+ *   字数 / 状态
+ *   更新...
+ *   立即阅读 / 放入书架
+ *   月票 / 推荐票 / 打赏 / 刀片
+ *   <完整简介>
+ *   作品目录
+ *
+ * 这里故意按稳定的语义边界“最后一个榜单指标 -> 作品目录”切简介，
+ * 而不是依赖容易变化的 CSS class。
+ */
+function parseMIPDetailText(raw, fallbackTitle = "") {
+  const lines = String(raw || "")
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+
+  const title = String(fallbackTitle || lines[0] || "").trim();
+  let author = "";
+  let category = "";
+
+  for (const line of lines.slice(0, 12)) {
+    const m = line.match(/^(.+?)\s+著\s*\/\s*(.+)$/u);
+    if (m) {
+      author = m[1].trim();
+      category = m[2].trim();
+      break;
+    }
+  }
+
+  let end = lines.findIndex((line) => /^作品目录$/u.test(line));
+  if (end < 0) end = lines.findIndex((line) => line.includes("作品目录"));
+  if (end < 0) end = lines.length;
+
+  let start = -1;
+  for (let i = 0; i < end; i++) {
+    if (/^(?:[\d.]+(?:万|亿)?\s*)?(?:月票|推荐票|次打赏|刀片)$/u.test(lines[i])) {
+      start = i + 1;
+    }
+  }
+
+  if (start < 0) {
+    const shelf = lines.findIndex((line) => /放入书架|立即阅读/u.test(line));
+    if (shelf >= 0) start = shelf + 1;
+  }
+
+  if (start < 0 || start >= end) {
+    return { title, author, category, desc: "" };
+  }
+
+  const desc = lines
+    .slice(start, end)
+    .filter(
+      (line) =>
+        !/^(?:[\d.]+(?:万|亿)?\s*)?(?:月票|推荐票|次打赏|刀片)$/u.test(line) &&
+        !/^(?:立即阅读|放入书架)$/u.test(line)
+    )
+    .join("\n")
+    .trim();
+
+  return { title, author, category, desc };
+}
+
+function isAllowedCategory(category) {
+  return String(category || "").trim() !== "女频";
+}
+
+function buildMIPPageTextJS() {
+  return `JSON.stringify({
+    host: location.host,
+    text: (document.body && document.body.innerText || "")
+  })`;
+}
+
+function fetchMIPDetails(port, books) {
+  const details = new Map();
+
+  for (let i = 0; i < books.length; i++) {
+    const item = books[i];
+    const id = String(item.bookId || "").trim();
+    if (!id || details.has(id)) continue;
+
+    const url = `${MIP_BOOK_BASE}${id}`;
+    try {
+      ab(port, "open", url);
+      sleep(DETAIL_SLEEP_MS);
+      const page = evalJSONBase64(port, buildMIPPageTextJS()) || {};
+      if (!String(page.host || "").includes("ciweimao.com")) {
+        console.error(`  [刺猬猫详情] ${id} 被重定向到 ${page.host || "unknown"}，跳过`);
+        continue;
+      }
+      const detail = parseMIPDetailText(page.text, item.title);
+      details.set(id, { ...detail, url: item.url || `https://www.ciweimao.com/book/${id}` });
+    } catch (error) {
+      console.error(
+        `  [刺猬猫详情 ${i + 1}/${books.length}] ${item.title || id} 失败：${error && error.message ? error.message : error}`
+      );
+    }
+  }
+
+  return details;
+}
+
 // ---------------------------------------------------------------------------
 // 主流程
 // ---------------------------------------------------------------------------
@@ -131,7 +244,6 @@ function main() {
     ab(PORT, "open", RANK_URL);
     sleep(4000);
 
-    // 连通性自检：CDP 未起/被重定向时给可操作报错，而非误报"结构已变"
     const probe = probePage(PORT);
     if (!probe) {
       console.error(
@@ -149,7 +261,6 @@ function main() {
 
     sections = extractAllRanks(PORT);
     if (!sections.length) {
-      // 懒加载可能未触发，再滚动重试一次
       scrollLoad(PORT, 2);
       sleep(1000);
       sections = extractAllRanks(PORT);
@@ -167,59 +278,94 @@ function main() {
 
   console.log(`  ✓ 提取 ${sections.length} 个榜单，${urls.length} 个书籍链接`);
 
-  // 筛选需要的榜单类型
   const targetTypes =
     RANKTYPE === "all"
       ? RANK_TYPES
       : RANK_TYPES.filter((r) => r.id === RANKTYPE);
 
+  if (!targetTypes.length) {
+    throw new Error(`未知 --type: ${RANKTYPE}`);
+  }
+
+  const norm = (value) => String(value || "").replace(/\s+/g, "");
+  const targetEntries = [];
+  const seenIds = new Set();
+
+  for (const rt of targetTypes) {
+    const section = sections.find((item) => item.name === rt.header);
+    if (!section) continue;
+    for (const entry of section.entries) {
+      const matched = urls.find((item) => norm(item.title) === norm(entry.title));
+      if (!matched || !matched.bookId || seenIds.has(String(matched.bookId))) continue;
+      seenIds.add(String(matched.bookId));
+      targetEntries.push({
+        bookId: String(matched.bookId),
+        title: entry.title || matched.title,
+        url: matched.url,
+      });
+    }
+  }
+
+  console.log(`→ 补抓 ${targetEntries.length} 本去重榜单作品的公开 MIP 完整简介...`);
+  const details = fetchMIPDetails(PORT, targetEntries);
+  const femaleCount = [...details.values()].filter((d) => !isAllowedCategory(d.category)).length;
+  const introCount = [...details.values()].filter((d) => d.desc).length;
+  console.log(
+    `  ✓ 详情成功 ${details.size}/${targetEntries.length}；有简介 ${introCount}；剔除女频 ${femaleCount}`
+  );
+
   let written = 0;
   for (const rt of targetTypes) {
     try {
-      const section = sections.find((s) => s.name === rt.header);
+      const section = sections.find((item) => item.name === rt.header);
       if (!section || !section.entries.length) {
         console.log(`  ⚠ ${rt.label} 无数据，跳过`);
         continue;
       }
 
+      const rows = [];
+      for (const entry of section.entries) {
+        const matched = urls.find((item) => norm(item.title) === norm(entry.title));
+        if (!matched) continue;
+        const detail = details.get(String(matched.bookId));
+        if (!detail || !detail.desc || !isAllowedCategory(detail.category)) continue;
+
+        rows.push({
+          ...entry,
+          title: detail.title || entry.title,
+          author: detail.author || entry.author,
+          genre: detail.category || entry.genre,
+          url: detail.url || matched.url,
+          desc: detail.desc,
+        });
+      }
+
+      if (!rows.length) {
+        console.log(`  ⚠ ${rt.label} 没有拿到非女频完整简介，跳过输出`);
+        continue;
+      }
+
       const now = new Date().toISOString();
-      const norm = (s) => (s || "").replace(/\s+/g, "");
-      const linked = section.entries.filter((e) =>
-        urls.some((u) => norm(u.title) === norm(e.title))
-      ).length;
       const lines = [
         `# 刺猬猫 · ${rt.label}`,
         "",
         `- 来源：${RANK_URL}`,
         `- 抓取时间：${now}`,
-        `- 条目数：${section.entries.length}`,
-        `- 作品页链接：${linked} / ${section.entries.length}`,
+        `- 原榜条目：${section.entries.length}`,
+        `- 可用非女频简介：${rows.length}`,
         "",
         "---",
         "",
       ];
 
-      for (const entry of section.entries) {
-        try {
-          lines.push(`### #${entry.rank} ${entry.title}`);
-          const meta = [
-            entry.author,
-            entry.genre,
-            entry.metric || "",
-          ].filter(Boolean).join(" · ");
-          if (meta) lines.push(`*${meta}*`);
-
-          // 按标题匹配书籍链接（归一后比对）
-          const matched = urls.find((u) => norm(u.title) === norm(entry.title));
-          if (matched) {
-            lines.push(`[作品页](${matched.url})`);
-          }
-
-          lines.push("", "---", "");
-        } catch (entryErr) {
-          console.error(`[ciweimao] ${rt.label} 条目处理出错（#${entry.rank} ${entry.title}）: ${entryErr.message}`);
-          lines.push("", "---", "");
-        }
+      for (const entry of rows) {
+        lines.push(`### #${entry.rank} ${entry.title}`);
+        const meta = [entry.author, entry.genre, entry.metric || ""]
+          .filter(Boolean)
+          .join(" · ");
+        if (meta) lines.push(`*${meta}*`);
+        if (entry.url) lines.push(`[作品页](${entry.url})`);
+        lines.push("", "**简介**", "", entry.desc, "", "---", "");
       }
 
       const filename = `刺猬猫${rt.label}_${localDateStamp()}.md`;
@@ -227,11 +373,12 @@ function main() {
       const filepath = path.join(OUTDIR, filename);
       fs.writeFileSync(filepath, lines.join("\n"), "utf-8");
       written++;
-      console.log(`  ✓ ${rt.label}：${section.entries.length} 条 → ${filepath}`);
+      console.log(`  ✓ ${rt.label}：${rows.length} 本完整简介 → ${filepath}`);
     } catch (rankErr) {
       console.error(`[ciweimao] ${rt.label} 处理出错，跳过: ${rankErr.message}`);
     }
   }
+
   return written;
 }
 
@@ -239,4 +386,10 @@ if (require.main === module) {
   runCli(main, "刺猬猫采集");
 }
 
-module.exports = { extractAllRanks, extractBookUrls };
+module.exports = {
+  extractAllRanks,
+  extractBookUrls,
+  parseMIPDetailText,
+  isAllowedCategory,
+  buildMIPPageTextJS,
+};
