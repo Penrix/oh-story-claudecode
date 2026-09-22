@@ -94,6 +94,12 @@ function evaluateIntro(intro, minChars = 80) {
     return { ok: false, reason: "placeholder" };
   }
 
+  // 明确自我标注为女频/女性向/女主文的作品，不进入男频 Case 池。
+  // 只认独立标签，避免误杀“穿到女频”“吐槽女频文”等男主视角作品。
+  if (/[【\[]\s*(?:女频|女性向|女生频道|女主文|女主视角)\s*[】\]]/u.test(text)) {
+    return { ok: false, reason: "femaleChannel" };
+  }
+
   const body = introBodyWithoutLeadingTags(text);
   const chars = contentLength(body);
   if (chars < minChars) return { ok: false, reason: "short" };
@@ -198,7 +204,7 @@ function renderCaseMarkdown(cases) {
 function buildCasePool(markdowns, minChars = 80) {
   const extracted = markdowns.flatMap(extractCasesFromMarkdown);
   const accepted = [];
-  const rejected = { empty: 0, placeholder: 0, short: 0, singleSentence: 0 };
+  const rejected = { empty: 0, placeholder: 0, femaleChannel: 0, short: 0, singleSentence: 0 };
 
   for (const item of extracted) {
     const verdict = evaluateIntro(item.intro, minChars);
@@ -244,7 +250,7 @@ function main() {
   console.log(`去重：${s.duplicates}`);
   console.log(`最终 Case：${s.final}`);
   console.log(
-    `淘汰：empty=${s.rejected.empty || 0}, placeholder=${s.rejected.placeholder || 0}, short=${s.rejected.short || 0}, singleSentence=${s.rejected.singleSentence || 0}`
+    `淘汰：empty=${s.rejected.empty || 0}, placeholder=${s.rejected.placeholder || 0}, femaleChannel=${s.rejected.femaleChannel || 0}, short=${s.rejected.short || 0}, singleSentence=${s.rejected.singleSentence || 0}`
   );
   console.log(`已写入：${mdPath}`);
   console.log(`已写入：${jsonlPath}`);
