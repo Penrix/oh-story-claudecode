@@ -632,6 +632,22 @@ function testStoryCaseCollector() {
     "singleSentence"
   );
   assert(!collector.isUsefulIntro("【都市+重生+恋爱】", 80), "只有标签的简介必须淘汰");
+  const explicitFemaleCase =
+    "【女主文】虞梨得到英雄编辑器后，把一个个少女角色当女儿养大。她原本只想安静玩游戏，后来这些角色却陆续来到现实，围绕她展开新的生活与关系。";
+  assert(
+    !collector.isUsefulIntro(explicitFemaleCase, 80),
+    "明确标注【女主文】的 Case 不能进入男频池"
+  );
+  assert.strictEqual(
+    collector.evaluateIntro(explicitFemaleCase, 80).reason,
+    "femaleChannel"
+  );
+  const maleCounterCase =
+    "张澈吐槽女频文的逆天剧情后穿进了霸总世界。他仍然以男主身份掌握行动权，开始用自己的方式整顿满城霸总，并把原本的关系规则全部改写。";
+  assert(
+    collector.isUsefulIntro(maleCounterCase, 80),
+    "正文提到女频但本身是男主视角的 Case 不能被误杀"
+  );
 
   const md = [
     "# 番茄 · 男频阅读榜",
