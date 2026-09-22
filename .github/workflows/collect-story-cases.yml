@@ -84,7 +84,8 @@ jobs:
           fi
           exit 0
 
-      - name: Collect Ciweimao rankings with full intros
+      - name: Collect Ciweimao non-female rankings with full intros
+        # 刺猬猫必须解析出明确分类才准入；女频/女生/女性分类和分类未知都 fail closed。
         shell: bash
         run: |
           set +e
