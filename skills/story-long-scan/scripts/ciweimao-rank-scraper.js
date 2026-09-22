@@ -310,10 +310,16 @@ function main() {
 
   console.log(`→ 补抓 ${targetEntries.length} 本去重榜单作品的公开 MIP 完整简介...`);
   const details = fetchMIPDetails(PORT, targetEntries);
-  const femaleCount = [...details.values()].filter((d) => !isAllowedCategory(d.category)).length;
   const introCount = [...details.values()].filter((d) => d.desc).length;
+  const categoryKnownCount = [...details.values()].filter(
+    (d) => String(d.category || "").trim()
+  ).length;
+  const categoryUnknownCount = details.size - categoryKnownCount;
+  const femaleCount = [...details.values()].filter((d) =>
+    /(?:女频|女生|女性)/u.test(String(d.category || "").replace(/\s+/g, ""))
+  ).length;
   console.log(
-    `  ✓ 详情成功 ${details.size}/${targetEntries.length}；有简介 ${introCount}；剔除女频 ${femaleCount}`
+    `  ✓ 详情成功 ${details.size}/${targetEntries.length}；有简介 ${introCount}；分类已识别 ${categoryKnownCount}；分类未知 ${categoryUnknownCount}；剔除女频 ${femaleCount}`
   );
 
   let written = 0;
