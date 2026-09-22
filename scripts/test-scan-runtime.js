@@ -711,6 +711,63 @@ function testStoryCaseCollector() {
   assert.strictEqual(qimao.cleanDesc(veryLong), veryLong, "七猫简介不得截断");
 }
 
+function testCiweimaoFullIntroParser() {
+  const scraper = loadFresh(
+    path.join(repoRoot, "skills/story-long-scan/scripts/ciweimao-rank-scraper.js")
+  );
+
+  const maleText = [
+    "某科学的英灵速通指南",
+    "某科学的英灵速通指南",
+    "作者甲 著 / 科幻无限",
+    "123万字 / 连载中",
+    "更新：今天 / 第100章",
+    "立即阅读",
+    "放入书架",
+    "321月票",
+    "654推荐票",
+    "0次打赏",
+    "12刀片",
+    "藤丸立香掉进了另一个世界，他手里只剩下一套看起来完全不讲道理的英灵组合。",
+    "别人按部就班攻略地下城，他却开始把宝具、从者与当地规则重新拼在一起，硬是走出一条谁也没见过的路线。",
+    "作品目录",
+    "第一章",
+  ].join("\n");
+
+  const detail = scraper.parseMIPDetailText(maleText, "某科学的英灵速通指南");
+  assert.strictEqual(detail.title, "某科学的英灵速通指南");
+  assert.strictEqual(detail.author, "作者甲");
+  assert.strictEqual(detail.category, "科幻无限");
+  assert.match(detail.desc, /藤丸立香掉进了另一个世界/);
+  assert.match(detail.desc, /别人按部就班攻略地下城/);
+  assert(!detail.desc.includes("作品目录"), "目录不能混入简介");
+  assert.strictEqual(scraper.isAllowedCategory(detail.category), true);
+
+  const female = scraper.parseMIPDetailText(
+    [
+      "女频样书",
+      "作者乙 著 / 女频",
+      "10万字 / 连载中",
+      "立即阅读",
+      "1月票",
+      "2推荐票",
+      "0次打赏",
+      "0刀片",
+      "第一句简介。",
+      "第二句简介。",
+      "作品目录",
+    ].join("\n"),
+    "女频样书"
+  );
+  assert.strictEqual(female.category, "女频");
+  assert.strictEqual(
+    scraper.isAllowedCategory(female.category),
+    false,
+    "刺猬猫女频分类必须在进入 Case Builder 前就被排除"
+  );
+  assert.match(scraper.buildMIPPageTextJS(), /document\.body/);
+}
+
 function testQidianBooklistCollector() {
   const scraper = loadFresh(
     path.join(repoRoot, "skills/story-long-scan/scripts/qidian-booklist-scraper.js")
@@ -1647,6 +1704,7 @@ testJjwxcDetailFailureIsolation();
 testQidianRankIsolation();
 testQidianFieldContractAndDescriptionPreservation();
 testStoryCaseCollector();
+testCiweimaoFullIntroParser();
 testQidianBooklistCollector();
 testQimaoPeriodPlan();
 testQimaoPartialTargetStatus();
