@@ -1,7 +1,7 @@
 ---
 name: story-long-scan
-version: 1.2.0
-description: "从起点、番茄、七猫等真实网文榜单批量采集故事 Seed 可用 Case。榜单只负责市场预筛，最终只保留书名与完整、有内容的真实简介。触发方式：/story-long-scan、/长篇扫榜、/榜单采集、「大量采集榜单数据」「采集故事Case」。"
+version: 1.3.0
+description: "从起点、番茄男频、刺猬猫等真实网文榜单批量采集故事 Seed 可用 Case。榜单只负责市场预筛，女频不进入生产池，最终只保留书名与完整、有内容的真实简介。触发方式：/story-long-scan、/长篇扫榜、/榜单采集、「大量采集榜单数据」「采集故事Case」。"
 metadata: {"openclaw":{"source":"https://github.com/Penrix/oh-story-claudecode"}}
 ---
 # story-long-scan：市场过滤后的 Case 采集
@@ -39,6 +39,7 @@ metadata: {"openclaw":{"source":"https://github.com/Penrix/oh-story-claudecode"}
 7. **原始 Case 高于模型理解。** 采集阶段不提炼 Motion，不总结套路，不把简介压缩成理论。
 8. **最终输出保持极简。** 每个 Case 只输出书名和完整简介。
 9. **发现过的 book_id 不允许因简介失败而丢失。** 缺简介候选必须进入持久化待补队列；下一轮先重试旧队列，成功后自动移出。
+10. **女频不进入生产 Case 池。** 当前生产源只允许起点、番茄男频、刺猬猫非女频作品；晋江、七猫不作为生产源，刺猬猫详情页若分类为“女频”也必须在 Builder 之前剔除。
 
 ---
 
@@ -68,7 +69,24 @@ metadata: {"openclaw":{"source":"https://github.com/Penrix/oh-story-claudecode"}
 +
 番茄男频
 +
-七猫男频
+刺猬猫（排除女频分类）
+```
+
+三者承担的价值不同：
+
+```text
+起点
+= 主干男频市场产品
+
+番茄男频
+= 推荐流 / 短视频流量环境下，
+  书名与简介必须快速把卖点说直白，
+  因此特别适合补充“第一眼卖什么”的 Case
+
+刺猬猫
+= 二次元 / 同人 / 轻小说 / IP 嫁接的高密度创意池，
+  重点借设定接法、关系玩法、世界观嫁接和同人重演；
+  完本率不是 Seed 采集门槛，烂尾不等于创意本身无效
 ```
 
 其中起点继续做深层扩展：
@@ -85,23 +103,22 @@ metadata: {"openclaw":{"source":"https://github.com/Penrix/oh-story-claudecode"}
 持久化待补简介队列
 ```
 
-番茄和七猫当前先作为独立的真实榜单入口：
-
-```text
-番茄男频各榜 / 各题材
-+
-七猫男频大热 / 新书 / 完结 / 收藏 / 更新榜
-↓
-完整简介
-↓
-统一 Case Builder
-```
+番茄男频直接采真实榜单与各题材入口；刺猬猫先从榜单找到作品，再逐本进入公开详情页补完整简介，并在详情层明确剔除“女频”分类。
 
 三个平台最后都进入同一个历史累计 Case 池，不为平台分别建立创作输入库。
 
 生产工作流每天自动执行一轮；榜单按日级变化已经足够，不做小时级高频抓取。单个平台失败只记录警告，不阻断其他平台结果进入累计池。
 
-晋江、刺猬猫现有脚本暂时仍不进入生产默认源：只有当它们能稳定提供真实完整简介，并通过“至少两句 + 最小有效内容长度”的统一门槛后再接入。
+**明确不进入当前生产池：**
+
+```text
+晋江
+七猫
+刺猬猫 / 女频分类
+番茄 / 女频频道
+```
+
+这些来源即使脚本仍保留，也不能被生产工作流调用。
 
 ---
 
@@ -141,13 +158,26 @@ node scripts/fanqie-rank-scraper.js --channel 1 --type all --top 20 --outdir {ra
 
 如果用户明确要求女频或全频道，再改 `--channel`。
 
-### 七猫男频
+### 刺猬猫
 
 ```bash
-node scripts/qimao-rank-scraper.js --channel male --type all --period all --outdir {raw_dir}
+node scripts/ciweimao-rank-scraper.js --type all --outdir {raw_dir}
 ```
 
-七猫榜单页本身包含简介。保留完整简介，不做长度截断。
+刺猬猫榜单本身只负责发现作品。采集器随后对榜单作品按 book id 去重，并进入公开 MIP 详情页取得真实完整简介。
+
+详情页同时读取平台分类：
+
+```text
+分类 = 女频
+→ 立即剔除
+
+其他分类
+→ 保留完整简介
+→ 交给统一 Builder 再做“至少两句 + 最小有效长度”过滤
+```
+
+不要因为作品断更、烂尾、完结状态不理想就淘汰它。当前 Case 池要的是市场里已经实际演过的创意与产品动作，不是“完本质量奖”。
 
 ---
 
@@ -516,7 +546,8 @@ data/story-cases/起点待补简介.jsonl
 |---|---|
 | [scripts/qidian-rank-scraper.js](scripts/qidian-rank-scraper.js) | 起点榜单采集 |
 | [scripts/fanqie-rank-scraper.js](scripts/fanqie-rank-scraper.js) | 番茄榜单 + 详情页简介 |
-| [scripts/qimao-rank-scraper.js](scripts/qimao-rank-scraper.js) | 七猫榜单采集 |
+| [scripts/ciweimao-rank-scraper.js](scripts/ciweimao-rank-scraper.js) | 刺猬猫榜单发现 + 公开详情页完整简介 + 女频分类排除 |
+| [scripts/qimao-rank-scraper.js](scripts/qimao-rank-scraper.js) | 七猫采集器（保留代码，不进入当前生产池） |
 | [scripts/qidian-booklist-scraper.js](scripts/qidian-booklist-scraper.js) | 从上榜起点作品发现关联读者书单并扩展作品 |
 | [scripts/case-pool-builder.js](scripts/case-pool-builder.js) | 榜单 + 书单 + 历史池去重、简介过滤、累计输出 |
 | [references/scan-output-format.md](references/scan-output-format.md) | 各平台原始采集字段与简介保真规则 |
