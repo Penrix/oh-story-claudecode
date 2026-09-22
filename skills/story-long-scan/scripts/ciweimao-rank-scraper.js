@@ -187,7 +187,9 @@ function parseMIPDetailText(raw, fallbackTitle = "") {
 }
 
 function isAllowedCategory(category) {
-  return String(category || "").trim() !== "女频";
+  const normalized = String(category || "").replace(/\s+/g, "").trim();
+  if (!normalized) return false;
+  return !/(?:女频|女生|女性)/u.test(normalized);
 }
 
 function buildMIPPageTextJS() {
