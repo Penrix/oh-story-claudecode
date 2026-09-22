@@ -1,4 +1,4 @@
-name: Collect story seed cases
+name: Collect male story seed cases
 
 on:
   workflow_dispatch:
@@ -16,7 +16,8 @@ permissions:
 
 concurrency:
   group: story-case-collection
-  cancel-in-progress: false
+  # 新任务代表更新的采集规则；旧任务不应继续把过时平台写回历史池。
+  cancel-in-progress: true
 
 jobs:
   collect:
@@ -83,19 +84,17 @@ jobs:
           fi
           exit 0
 
-      - name: Collect Qimao male rankings
+      - name: Collect Ciweimao rankings with full intros
         shell: bash
         run: |
           set +e
-          node skills/story-long-scan/scripts/qimao-rank-scraper.js \
-            --channel male \
+          node skills/story-long-scan/scripts/ciweimao-rank-scraper.js \
             --type all \
-            --period all \
             --outdir .case-raw
           code=$?
           set -e
           if [ "$code" -ne 0 ] && [ "$code" -ne 2 ]; then
-            echo "::warning::Qimao collection failed; other sources will still be published"
+            echo "::warning::Ciweimao collection failed; Qidian and Fanqie results will still be published"
           fi
           exit 0
 
