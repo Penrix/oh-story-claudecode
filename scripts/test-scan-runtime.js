@@ -643,7 +643,8 @@ function testStoryCaseCollector() {
     "femaleChannel"
   );
   const maleCounterCase =
-    "张澈吐槽女频文的逆天剧情后穿进了霸总世界。他仍然以男主身份掌握行动权，开始用自己的方式整顿满城霸总，并把原本的关系规则全部改写。";
+    "张澈吐槽女频文的逆天剧情后穿进了霸总世界。他仍然以男主身份掌握行动权，开始用自己的方式整顿满城霸总，把原本围着恋爱脑转的规则全部掀翻。" +
+    "面对动不动就违法囚禁、豪掷千金和强取豪夺的霸总们，他直接报警、夺资源、收公司，让整个世界重新按他的判断运转。";
   assert(
     collector.isUsefulIntro(maleCounterCase, 80),
     "正文提到女频但本身是男主视角的 Case 不能被误杀"
