@@ -134,7 +134,7 @@ jobs:
           find .case-raw -maxdepth 1 -type f -name '*.md' -printf '%f\n' | sort || true
 
       - name: Build cumulative Seed Case pool
-        # Seed Case 简介必须至少两句；单句无论多长都由 builder 淘汰。
+        # Seed Case 简介必须至少两句；明确女频/女主文自标签也由 builder 淘汰。
         shell: bash
         run: |
           inputs=(--input .case-raw)
