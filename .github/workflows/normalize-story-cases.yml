@@ -1,0 +1,82 @@
+name: Normalize story case search waters
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - Collect male story seed cases
+    types:
+      - completed
+
+permissions:
+  contents: write
+
+concurrency:
+  group: story-case-water-normalization
+  cancel-in-progress: true
+
+jobs:
+  normalize:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout latest main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Normalize one case document with latest production rules
+        shell: bash
+        run: |
+          node skills/story-long-scan/scripts/case-pool-organizer.js \
+            --input data/story-cases/榜单数据.jsonl \
+            --output data/story-cases/榜单数据.md
+
+      - name: Publish normalized document
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet -- data/story-cases/榜单数据.md; then
+            echo "榜单数据.md 已经符合当前整理规则"
+            exit 0
+          fi
+
+          cp data/story-cases/榜单数据.md /tmp/榜单数据.md
+
+          for attempt in 1 2 3; do
+            echo "Normalize publish attempt $attempt/3"
+            git fetch origin main
+            git reset --hard origin/main
+
+            node skills/story-long-scan/scripts/case-pool-organizer.js \
+              --input data/story-cases/榜单数据.jsonl \
+              --output data/story-cases/榜单数据.md
+
+            if git diff --quiet -- data/story-cases/榜单数据.md; then
+              echo "并发更新后已无需再提交"
+              exit 0
+            fi
+
+            git add data/story-cases/榜单数据.md
+            git commit -m "data: normalize story cases by production search waters"
+
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+
+            echo "Concurrent main update detected; retrying against latest main"
+            sleep 2
+          done
+
+          echo "::error::Failed to publish normalized Case document after 3 retries"
+          exit 1
