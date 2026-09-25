@@ -1,6 +1,6 @@
 ---
 name: story-long-scan
-version: 1.4.0
+version: 1.4.1
 description: "从起点、番茄男频、刺猬猫等真实网文榜单批量采集故事 Seed 可用 Case。榜单只负责市场预筛，女频不进入生产池，最终只保留书名与完整、有内容的真实简介。触发方式：/story-long-scan、/长篇扫榜、/榜单采集、「大量采集榜单数据」「采集故事Case」。"
 metadata: {"openclaw":{"source":"https://github.com/Penrix/oh-story-claudecode"}}
 ---
@@ -108,6 +108,14 @@ metadata: {"openclaw":{"source":"https://github.com/Penrix/oh-story-claudecode"}
 三个平台最后都进入同一个历史累计 Case 池，不为平台分别建立创作输入库。
 
 生产工作流采用“日级目标 + 冗余补跑”而不是单一 cron：每天提供多个触发窗口；最近 18 小时已有一次完整成功时后续窗口自动跳过，若上一轮失败或只完成部分来源，下一窗口继续补跑。单个平台或浏览器环境失败不能阻断已经拿到的数据进入累计池。
+
+完整性状态固定写入：
+
+```text
+data/story-cases/采集状态.json
+```
+
+其中 `complete=true` 只代表本轮所有生产来源都没有报告缺失；Chrome 启动失败、番茄任一题材漏采、刺猬猫任一榜单/详情/分类漏采、起点动态榜单或书单扩展 partial，都会让 `complete=false`。因此“写回了一批数据”和“今天完整采完”是两件事，不能混为一谈。
 
 **明确不进入当前生产池：**
 
