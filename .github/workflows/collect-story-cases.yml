@@ -262,7 +262,7 @@ jobs:
         shell: bash
         run: |
           printf 'Markdown cases: '
-          grep -c '^## 《' .case-out/榜单数据.md || true
+          grep -Ec '^#{2,4} 《' .case-out/榜单数据.md || true
           printf 'JSONL cases: '
           wc -l < .case-out/榜单数据.jsonl
           printf 'Pending Qidian intros: '
