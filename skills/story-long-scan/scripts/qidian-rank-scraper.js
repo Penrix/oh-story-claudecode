@@ -75,10 +75,9 @@ const RANK_TYPES = [
   { id: "recom", label: "原创推荐榜", mobilePath: "/rank/rec/", mobileLabel: "推荐榜" },
   { id: "readindex", label: "阅读指数榜", mobilePath: "/rank/readindex/" },
   {
-    id: "collect",
-    label: "收藏榜",
+    id: "newfans",
+    label: "书友榜",
     mobilePath: "/rank/newfans/",
-    mobileLabel: "书友榜（移动端替代）",
   },
   {
     id: "sanjiang",
