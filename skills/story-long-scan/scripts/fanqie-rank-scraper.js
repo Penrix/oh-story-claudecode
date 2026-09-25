@@ -292,6 +292,8 @@ function scrapeChannel(ch, type) {
 
   let totalBooks = 0;
   let resolvedTitles = 0;
+  let failedCategories = 0;
+  const failureReasons = [];
   const bodyLines = [];
 
   for (let ci = 0; ci < categories.length; ci++) {
@@ -305,6 +307,8 @@ function scrapeChannel(ch, type) {
 
       let books = extractBookList(PORT);
       if (!Array.isArray(books) || !books.length) {
+        failedCategories++;
+        failureReasons.push(`${cat.name}: no books`);
         bodyLines.push(`## ${cat.name} — 0 本`, "", "---", "");
         continue;
       }
@@ -348,8 +352,11 @@ function scrapeChannel(ch, type) {
 
       bodyLines.push("---", "");
     } catch (catErr) {
+      failedCategories++;
+      const message = catErr && catErr.message ? catErr.message : String(catErr);
+      failureReasons.push(`${cat.name}: ${message}`);
       console.error(
-        `  [fanqie] 品类 ${cat.name} 处理出错，跳过: ${catErr && catErr.message ? catErr.message : catErr}`
+        `  [fanqie] 品类 ${cat.name} 处理出错，跳过: ${message}`
       );
       bodyLines.push(`## ${cat.name} — 采集失败`, "", "---", "");
     }
@@ -368,17 +375,26 @@ function scrapeChannel(ch, type) {
   );
 
   if (totalBooks > 0 && resolvedTitles === 0) {
+    failedCategories++;
+    failureReasons.push(`title resolution 0/${totalBooks}`);
     console.error(
       `  ✗ ${chLabel}${tyLabel}：${totalBooks} 本全部标题解析失败。多为详情页结构变动或登录/验证拦截，` +
       `请在 Chrome 内手动打开任一 https://fanqienovel.com/page/{bookId} 确认页面正常。`
     );
   } else if (ratio < 0.5) {
+    failedCategories++;
+    failureReasons.push(`title resolution low ${resolvedTitles}/${totalBooks}`);
     console.error(
       `  ⚠ ${chLabel}${tyLabel}：标题解析率偏低（${resolvedTitles}/${totalBooks}），结果质量已标注。`
     );
   }
 
-  return lines.concat(bodyLines).join("\n");
+  return {
+    content: lines.concat(bodyLines).join("\n"),
+    plannedCategories: categories.length,
+    failedCategories,
+    failureReasons,
+  };
 }
 
 function main() {
@@ -390,28 +406,49 @@ function main() {
   }
   const channels = CHANNEL === "all" ? ["1", "0"] : [CHANNEL];
   const types = TYPE === "all" ? ["2", "1"] : [TYPE];
+  const planned = channels.length * types.length;
   let written = 0;
+  let failed = 0;
+  const partialReasons = [];
 
   for (const ch of channels) {
     for (const ty of types) {
       try {
-        const content = scrapeChannel(ch, ty);
-        if (!content) continue;
+        const result = scrapeChannel(ch, ty);
+        if (!result || !result.content) {
+          failed++;
+          partialReasons.push(`${channelLabel(ch)}${typeLabel(ty)}: no output`);
+          continue;
+        }
 
         const filename = `番茄${channelLabel(ch)}${typeLabel(ty)}_全题材_${localDateStamp()}.md`;
         fs.mkdirSync(OUTDIR, { recursive: true });
         const filepath = path.join(OUTDIR, filename);
-        fs.writeFileSync(filepath, content, "utf-8");
+        fs.writeFileSync(filepath, result.content, "utf-8");
         written++;
+        if (result.failedCategories > 0) {
+          partialReasons.push(
+            `${channelLabel(ch)}${typeLabel(ty)}: ${result.failedCategories}/${result.plannedCategories} categories incomplete (${result.failureReasons.join(" | ")})`
+          );
+        }
         console.log(`  ✓ 已保存: ${filepath}`);
       } catch (chErr) {
+        failed++;
+        const message = chErr && chErr.message ? chErr.message : String(chErr);
+        partialReasons.push(`${channelLabel(ch)}${typeLabel(ty)}: ${message}`);
         console.error(
-          `[fanqie] ${channelLabel(ch)}${typeLabel(ty)} 采集失败，跳过: ${chErr && chErr.message ? chErr.message : chErr}`
+          `[fanqie] ${channelLabel(ch)}${typeLabel(ty)} 采集失败，跳过: ${message}`
         );
       }
     }
   }
-  return written;
+  return {
+    planned,
+    written,
+    failed,
+    partial: failed > 0 || partialReasons.length > 0,
+    partialReasons,
+  };
 }
 
 if (require.main === module) {
