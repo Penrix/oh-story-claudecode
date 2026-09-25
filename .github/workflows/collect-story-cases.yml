@@ -255,7 +255,7 @@ jobs:
             complete=false
           fi
 
-          COMPLETE="$complete" CASES="$cases" PENDING="$pending" BROWSER="$BROWSER_READY" PARTIAL="$COLLECTION_PARTIAL" python3 -c 'import json,os,datetime; state={"completed_at":datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00","Z"),"complete":os.environ["COMPLETE"].lower()=="true","cases":int(os.environ["CASES"]),"pending_qidian_intros":int(os.environ["PENDING"]),"browser_ready":os.environ["BROWSER"]=="1","partial":os.environ["PARTIAL"]=="1","run_id":os.environ.get("GITHUB_RUN_ID","")}; f=open(".case-state/采集状态.json","w",encoding="utf-8"); json.dump(state,f,ensure_ascii=False,indent=2); f.write("\\n"); f.close(); print(json.dumps(state,ensure_ascii=False))'
+          COMPLETE="$complete" CASES="$cases" PENDING="$pending" BROWSER="$BROWSER_READY" PARTIAL="$COLLECTION_PARTIAL" python3 -c 'import json,os,datetime; state={"completed_at":datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00","Z"),"complete":os.environ["COMPLETE"].lower()=="true","cases":int(os.environ["CASES"]),"pending_qidian_intros":int(os.environ["PENDING"]),"browser_ready":os.environ["BROWSER"]=="1","partial":os.environ["PARTIAL"]=="1","run_id":os.environ.get("GITHUB_RUN_ID","")}; f=open(".case-state/采集状态.json","w",encoding="utf-8"); json.dump(state,f,ensure_ascii=False,indent=2); f.write(chr(10)); f.close(); print(json.dumps(state,ensure_ascii=False))'
 
       - name: Show Case count
         if: steps.gate.outputs.should_run == '1'
