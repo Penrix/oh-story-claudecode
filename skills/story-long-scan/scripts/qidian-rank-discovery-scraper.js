@@ -199,7 +199,7 @@ function dedupeBooks(items) {
 async function main() {
   const args = process.argv.slice(2);
   const port = parseInt(getArg(args, "--port") || "9222", 10);
-  const outdir = getArg(args, "--outdir") || ".";
+  const OUTDIR = getArg(args, "--outdir") || ".";
   const maxPages = Math.max(1, Math.min(10, parseInt(getArg(args, "--pages") || "5", 10)));
 
   if (!openRankPage(port, RANK_HOME)) {
@@ -259,11 +259,9 @@ async function main() {
         ]
       );
 
-      fs.mkdirSync(outdir, { recursive: true });
-      const filepath = path.join(
-        outdir,
-        `起点动态补充_${safeFilename(target.label)}_${localDateStamp()}.md`
-      );
+      fs.mkdirSync(OUTDIR, { recursive: true });
+      const filename = `起点动态补充_${safeFilename(target.label)}_${localDateStamp()}.md`;
+      const filepath = path.join(OUTDIR, filename);
       fs.writeFileSync(filepath, markdown, "utf8");
       written++;
       console.log(`    ✓ 合并去重 ${books.length} 本 → ${filepath}`);
