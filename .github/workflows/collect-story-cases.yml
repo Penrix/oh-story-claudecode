@@ -156,6 +156,22 @@ PY
           tail -n 120 /tmp/story-case-xvfb.log 2>/dev/null || true
           exit 0
 
+      - name: Discover and collect current Qidian ranking catalog
+        if: steps.gate.outputs.should_run == '1' && env.BROWSER_READY == '1'
+        shell: bash
+        run: |
+          set +e
+          node skills/story-long-scan/scripts/qidian-rank-discovery-scraper.js \
+            --pages 5 \
+            --outdir .case-raw
+          code=$?
+          set -e
+          if [ "$code" -ne 0 ]; then
+            echo "::warning::Dynamic Qidian ranking expansion was partial (exit $code); next schedule window will retry"
+            echo "COLLECTION_PARTIAL=1" >> "$GITHUB_ENV"
+          fi
+          exit 0
+
       - name: Collect Fanqie male rankings
         if: steps.gate.outputs.should_run == '1' && env.BROWSER_READY == '1'
         shell: bash
