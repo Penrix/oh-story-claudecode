@@ -3,8 +3,12 @@ name: Collect male story seed cases
 on:
   workflow_dispatch:
   schedule:
-    # 榜单按日级变化即可；避免无意义的高频 Actions 运行。
+    # GitHub schedule 是 best-effort，可能延迟甚至漏触发。
+    # 一天给三个触发窗口；最近 18 小时已有完整成功则后续窗口自动空跑，
+    # 首轮失败/部分成功则下一窗口自动补跑。
     - cron: "17 6 * * *"
+    - cron: "17 12 * * *"
+    - cron: "17 18 * * *"
   push:
     branches:
       - main
@@ -16,30 +20,78 @@ permissions:
 
 concurrency:
   group: story-case-collection
-  # 新任务代表更新的采集规则；旧任务不应继续把过时平台写回历史池。
   cancel-in-progress: true
 
 jobs:
   collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
     steps:
       - name: Checkout fork
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      - name: Gate redundant scheduled retry
+        id: gate
+        shell: bash
+        run: |
+          should_run=1
+          reason="manual/push run"
+
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ] && [ -f data/story-cases/采集状态.json ]; then
+            read -r complete last_epoch < <(
+              python3 - <<'PY'
+import json
+from datetime import datetime, timezone
+
+try:
+    with open("data/story-cases/采集状态.json", "r", encoding="utf-8") as f:
+        state = json.load(f)
+    complete = "1" if state.get("complete") is True else "0"
+    raw = state.get("completed_at") or ""
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    dt = datetime.fromisoformat(raw) if raw else None
+    epoch = int(dt.timestamp()) if dt else 0
+    print(complete, epoch)
+except Exception:
+    print("0 0")
+PY
+            )
+            now_epoch=$(date +%s)
+            age=$((now_epoch - last_epoch))
+            if [ "$complete" = "1" ] && [ "$last_epoch" -gt 0 ] && [ "$age" -lt 64800 ]; then
+              should_run=0
+              reason="complete collection exists within 18h (age=${age}s)"
+            else
+              reason="no fresh complete collection; retry required (complete=${complete}, age=${age}s)"
+            fi
+          fi
+
+          echo "should_run=$should_run" >> "$GITHUB_OUTPUT"
+          echo "Collection gate: should_run=$should_run — $reason"
+
       - name: Setup Node
+        if: steps.gate.outputs.should_run == '1'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
 
       - name: Prepare directories
+        if: steps.gate.outputs.should_run == '1'
+        shell: bash
         run: |
           rm -rf .case-raw .case-out .case-state
           mkdir -p .case-raw .case-out .case-state
+          if [ -f data/story-cases/起点待补简介.jsonl ]; then
+            cp data/story-cases/起点待补简介.jsonl .case-state/起点待补简介.jsonl
+          fi
+          echo "BROWSER_READY=0" >> "$GITHUB_ENV"
+          echo "COLLECTION_PARTIAL=0" >> "$GITHUB_ENV"
 
-      - name: Collect Qidian ranking anchors
+      - name: Collect Qidian SSR ranking anchors
+        if: steps.gate.outputs.should_run == '1'
         shell: bash
         run: |
           set +e
@@ -49,12 +101,14 @@ jobs:
             --outdir .case-raw
           code=$?
           set -e
-          if [ "$code" -ne 0 ] && [ "$code" -ne 2 ]; then
-            echo "::warning::Qidian ranking collection failed; other sources will still run"
+          if [ "$code" -ne 0 ]; then
+            echo "::warning::Qidian SSR ranking collection was partial (exit $code)"
+            echo "COLLECTION_PARTIAL=1" >> "$GITHUB_ENV"
           fi
           exit 0
 
       - name: Bootstrap Chrome profile for hosted runner
+        if: steps.gate.outputs.should_run == '1'
         shell: bash
         run: |
           mkdir -p "$HOME/.config/google-chrome/Default"
@@ -62,30 +116,66 @@ jobs:
           Xvfb :99 -screen 0 1920x1080x24 >/tmp/story-case-xvfb.log 2>&1 &
           echo "DISPLAY=:99" >> "$GITHUB_ENV"
 
-      - name: Start browser collection runtime
+      - name: Start browser collection runtime with bounded retry
+        if: steps.gate.outputs.should_run == '1'
         shell: bash
         run: |
+          set +e
           npm install -g agent-browser
+          install_code=$?
+          if [ "$install_code" -ne 0 ]; then
+            echo "::warning::agent-browser install failed; browser sources will be skipped"
+            echo "BROWSER_READY=0" >> "$GITHUB_ENV"
+            echo "COLLECTION_PARTIAL=1" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          echo "Browser start attempt 1/2"
           node skills/browser-cdp/scripts/setup-cdp-chrome.js 9222
+          first_code=$?
+
+          if [ "$first_code" -eq 0 ]; then
+            echo "BROWSER_READY=1" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          echo "::warning::Chrome CDP first start failed; retrying once with a fresh debug profile"
+          echo "Browser start attempt 2/2"
+          node skills/browser-cdp/scripts/setup-cdp-chrome.js 9222 --reset --yes
+          second_code=$?
+
+          if [ "$second_code" -eq 0 ]; then
+            echo "BROWSER_READY=1" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          echo "::warning::Chrome CDP failed twice; continue with browser-independent Qidian SSR data and retry at the next schedule window"
+          echo "BROWSER_READY=0" >> "$GITHUB_ENV"
+          echo "COLLECTION_PARTIAL=1" >> "$GITHUB_ENV"
+          echo "---- Xvfb log ----"
+          tail -n 120 /tmp/story-case-xvfb.log 2>/dev/null || true
+          exit 0
 
       - name: Collect Fanqie male rankings
+        if: steps.gate.outputs.should_run == '1' && env.BROWSER_READY == '1'
         shell: bash
         run: |
           set +e
           node skills/story-long-scan/scripts/fanqie-rank-scraper.js \
             --channel 1 \
             --type all \
-            --top 20 \
+            --top 50 \
             --outdir .case-raw
           code=$?
           set -e
-          if [ "$code" -ne 0 ] && [ "$code" -ne 2 ]; then
-            echo "::warning::Fanqie collection failed; other sources will still be published"
+          if [ "$code" -ne 0 ]; then
+            echo "::warning::Fanqie collection was partial (exit $code); next schedule window will retry"
+            echo "COLLECTION_PARTIAL=1" >> "$GITHUB_ENV"
           fi
           exit 0
 
       - name: Collect Ciweimao non-female rankings with full intros
-        # 刺猬猫必须解析出明确分类才准入；女频/女生/女性分类和分类未知都 fail closed。
+        if: steps.gate.outputs.should_run == '1' && env.BROWSER_READY == '1'
         shell: bash
         run: |
           set +e
@@ -94,12 +184,14 @@ jobs:
             --outdir .case-raw
           code=$?
           set -e
-          if [ "$code" -ne 0 ] && [ "$code" -ne 2 ]; then
-            echo "::warning::Ciweimao collection failed; Qidian and Fanqie results will still be published"
+          if [ "$code" -ne 0 ]; then
+            echo "::warning::Ciweimao collection was partial (exit $code); next schedule window will retry"
+            echo "COLLECTION_PARTIAL=1" >> "$GITHUB_ENV"
           fi
           exit 0
 
       - name: Expand ranked Qidian books through reader booklists
+        if: steps.gate.outputs.should_run == '1' && env.BROWSER_READY == '1'
         shell: bash
         run: |
           pending_args=()
@@ -122,19 +214,21 @@ jobs:
             --outdir .case-raw
           code=$?
           set -e
-          if [ "$code" -ne 0 ] && [ "$code" -ne 2 ]; then
-            echo "::warning::Qidian booklist expansion failed; ranking cases will still be published"
+          if [ "$code" -ne 0 ]; then
+            echo "::warning::Qidian booklist expansion was partial (exit $code); persisted queue is retained"
+            echo "COLLECTION_PARTIAL=1" >> "$GITHUB_ENV"
           fi
           exit 0
 
       - name: Show raw source files
+        if: steps.gate.outputs.should_run == '1'
         shell: bash
         run: |
           echo "Raw collection files:"
           find .case-raw -maxdepth 1 -type f -name '*.md' -printf '%f\n' | sort || true
 
       - name: Build cumulative Seed Case pool
-        # Seed Case 简介必须至少两句；明确女频/女主文自标签也由 builder 淘汰。
+        if: steps.gate.outputs.should_run == '1'
         shell: bash
         run: |
           inputs=(--input .case-raw)
@@ -147,7 +241,45 @@ jobs:
             --min-chars 80 \
             --outdir .case-out
 
+      - name: Record collection state
+        if: steps.gate.outputs.should_run == '1'
+        shell: bash
+        run: |
+          cases=$(wc -l < .case-out/榜单数据.jsonl)
+          pending=0
+          if [ -f .case-state/起点待补简介.jsonl ]; then
+            pending=$(awk 'NF {n++} END {print n+0}' .case-state/起点待补简介.jsonl)
+          fi
+
+          complete=true
+          if [ "$BROWSER_READY" != "1" ] || [ "$COLLECTION_PARTIAL" = "1" ]; then
+            complete=false
+          fi
+
+          python3 - "$complete" "$cases" "$pending" "$BROWSER_READY" "$COLLECTION_PARTIAL" <<'PY'
+import json
+import os
+import sys
+from datetime import datetime, timezone
+
+complete = sys.argv[1].lower() == "true"
+state = {
+    "completed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    "complete": complete,
+    "cases": int(sys.argv[2]),
+    "pending_qidian_intros": int(sys.argv[3]),
+    "browser_ready": sys.argv[4] == "1",
+    "partial": sys.argv[5] == "1",
+    "run_id": os.environ.get("GITHUB_RUN_ID", ""),
+}
+with open(".case-state/采集状态.json", "w", encoding="utf-8") as f:
+    json.dump(state, f, ensure_ascii=False, indent=2)
+    f.write("\n")
+print(json.dumps(state, ensure_ascii=False))
+PY
+
       - name: Show Case count
+        if: steps.gate.outputs.should_run == '1'
         shell: bash
         run: |
           printf 'Markdown cases: '
@@ -160,8 +292,11 @@ jobs:
           else
             echo 0
           fi
+          printf 'Collection complete: '
+          python3 -c 'import json; print(json.load(open(".case-state/采集状态.json", encoding="utf-8"))["complete"])'
 
       - name: Upload Case artifact
+        if: steps.gate.outputs.should_run == '1'
         uses: actions/upload-artifact@v4
         with:
           name: story-seed-cases
@@ -169,15 +304,19 @@ jobs:
             .case-out/榜单数据.md
             .case-out/榜单数据.jsonl
             .case-state/起点待补简介.jsonl
+            .case-state/采集状态.json
 
       - name: Publish cumulative Case pool to fork
+        if: steps.gate.outputs.should_run == '1'
         shell: bash
         run: |
           cp .case-out/榜单数据.md /tmp/榜单数据.md
           cp .case-out/榜单数据.jsonl /tmp/榜单数据.jsonl
+          cp .case-state/采集状态.json /tmp/采集状态.json
           if [ -f .case-state/起点待补简介.jsonl ]; then
             cp .case-state/起点待补简介.jsonl /tmp/起点待补简介.jsonl
           fi
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
@@ -188,17 +327,17 @@ jobs:
             mkdir -p data/story-cases
             cp /tmp/榜单数据.md data/story-cases/榜单数据.md
             cp /tmp/榜单数据.jsonl data/story-cases/榜单数据.jsonl
+            cp /tmp/采集状态.json data/story-cases/采集状态.json
             if [ -f /tmp/起点待补简介.jsonl ]; then
               cp /tmp/起点待补简介.jsonl data/story-cases/起点待补简介.jsonl
             fi
-            git add data/story-cases/榜单数据.md data/story-cases/榜单数据.jsonl
+
+            git add \
+              data/story-cases/榜单数据.md \
+              data/story-cases/榜单数据.jsonl \
+              data/story-cases/采集状态.json
             if [ -f data/story-cases/起点待补简介.jsonl ]; then
               git add data/story-cases/起点待补简介.jsonl
-            fi
-
-            if git diff --cached --quiet; then
-              echo "Case pool and pending queue unchanged"
-              exit 0
             fi
 
             git commit -m "data: refresh cumulative story seed case pool"
