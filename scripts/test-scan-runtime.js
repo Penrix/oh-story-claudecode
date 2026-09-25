@@ -1766,6 +1766,73 @@ function testCdpRejectsUnverifiableIdentity() {
   );
 }
 
+
+function testCasePoolProductionWaterOrganization() {
+  const builder = loadFresh(
+    path.join(repoRoot, "skills/story-long-scan/scripts/case-pool-builder.js")
+  );
+
+  assert.deepStrictEqual(
+    builder.classifyCaseWater({
+      title: "港综：我三合会卧底，专抓自己人",
+      intro: "男主进入港综世界，从卧底身份开始行动。 他必须在警队与社团之间周旋。",
+    }),
+    { section: "共享认知母体 / IP", group: "港片港剧与华语男性影视" }
+  );
+  assert.deepStrictEqual(
+    builder.classifyCaseWater({
+      title: "东京：从假冒男友开始",
+      intro: "男主在东京生活，因为一次委托进入新的关系。 后续现实不断被这段关系改写。",
+    }),
+    { section: "共享认知母体 / IP", group: "日本现实 / 东京 / 日娱" }
+  );
+  assert.deepStrictEqual(
+    builder.classifyCaseWater({
+      title: "西幻：从被贵族夫人抚养长大开始",
+      intro: "少年在西幻帝国长大。 成年后进入自己的领地与贵族关系。",
+    }),
+    { section: "原创题材水域", group: "西幻 / 奇幻 / 领主" }
+  );
+  assert.deepStrictEqual(
+    builder.classifyCaseWater({
+      title: "人在诸天，开局一间万界商店",
+      intro: "他可以穿梭不同世界。 每个世界都留下新的现实关系。",
+    }),
+    { section: "跨母体 / 诸天 / 多世界", group: "跨母体 / 诸天 / 多世界" }
+  );
+  assert.deepStrictEqual(
+    builder.classifyCaseWater({
+      title: "完全没有稳定母体指纹的测试书",
+      intro: "甲做了一件具体的事。 乙因此改变了下一步选择。",
+    }),
+    { section: "待归位", group: "待归位" }
+  );
+
+  const original = [
+    {
+      title: "港综：测试甲",
+      intro: "男主进入港综世界以后先成为卧底。 随后通过一次具体行动改变警队与社团关系。",
+    },
+    {
+      title: "西幻：测试乙",
+      intro: "少年继承一块边境领地。 他开始经营领民并面对骑士与魔法带来的现实问题。",
+    },
+    {
+      title: "无明确分类测试丙",
+      intro: "甲原本准备离开这里。 一次意外让他改变选择，并真正进入另一段人生。",
+    },
+  ];
+  const rendered = builder.renderCaseMarkdown(original);
+  assert.match(rendered, /^# 榜单数据/m);
+  assert.match(rendered, /^## 共享认知母体 \/ IP/m);
+  assert.match(rendered, /^## 原创题材水域/m);
+  assert.match(rendered, /^## 待归位/m);
+  assert.strictEqual((rendered.match(/^#### 《/gm) || []).length, original.length);
+
+  const reparsed = builder.extractCasesFromMarkdown(rendered);
+  assert.deepStrictEqual(reparsed, original, "分类只改变检索位置，不能改变或丢失 Case");
+}
+
 testCdpUtils(longUtilsPath);
 testCdpUtils(shortUtilsPath);
 testWindowsInvocationBuilder(longUtilsPath);
@@ -1780,6 +1847,7 @@ testQidianFieldContractAndDescriptionPreservation();
 testStoryCaseCollector();
 testCiweimaoFullIntroParser();
 testQidianBooklistCollector();
+testCasePoolProductionWaterOrganization();
 testQimaoPeriodPlan();
 testQimaoPartialTargetStatus();
 testLongScanArgumentValidation();
