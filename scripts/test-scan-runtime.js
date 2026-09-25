@@ -516,6 +516,57 @@ function testJjwxcDetailFailureIsolation() {
   assert.match(partial.contents[0], /数据质量：\[部分详情缺失\]/);
 }
 
+function testQidianDynamicRankDiscovery() {
+  const discovery = loadFresh(
+    path.join(
+      repoRoot,
+      "skills/story-long-scan/scripts/qidian-rank-discovery-scraper.js"
+    )
+  );
+
+  const links = discovery.normalizeDiscoveredRankLinks([
+    { text: "月票榜", href: "/rank/yuepiao/" },
+    { text: "收藏榜", href: "https://www.qidian.com/rank/collect/chn21/page2/" },
+    { text: "追读榜", href: "/rank/zhuiread/" },
+    { text: "更多", href: "/rank/newfans/" },
+    { text: "女生月票榜", href: "/rank/female-yuepiao/" },
+    { text: "女频精选榜", href: "/rank/lady/" },
+    { text: "三江推荐", href: "/sanjiang/" },
+  ]);
+
+  const byId = new Map(links.map((item) => [item.id, item]));
+  assert.strictEqual(byId.get("yuepiao").label, "月票榜");
+  assert.strictEqual(byId.get("collect").label, "收藏榜");
+  assert.strictEqual(byId.get("zhuiread").label, "追读榜");
+  assert.strictEqual(byId.get("newfans").label, "书友榜");
+  assert.strictEqual(byId.get("sanjiang").label, "三江推荐");
+  assert(!links.some((item) => /female|lady/.test(item.id)), "女频榜单必须被动态发现器排除");
+
+  const pages = discovery.normalizePageUrls(
+    [
+      { href: "/rank/collect/page2/" },
+      { href: "https://www.qidian.com/rank/collect/page3/" },
+      { href: "/rank/collect/page9/" },
+      { href: "/rank/yuepiao/page2/" },
+    ],
+    "https://www.qidian.com/rank/collect/",
+    3
+  );
+  assert.deepStrictEqual(pages, [
+    "https://www.qidian.com/rank/collect/",
+    "https://www.qidian.com/rank/collect/page2/",
+    "https://www.qidian.com/rank/collect/page3/",
+  ]);
+
+  const books = discovery.dedupeBooks([
+    { title: "甲书", url: "https://www.qidian.com/book/1/" },
+    { title: "甲书", url: "https://www.qidian.com/book/1/" },
+    { title: "乙书", url: "https://www.qidian.com/book/2/" },
+  ]);
+  assert.strictEqual(books.length, 2);
+  assert.deepStrictEqual(books.map((book) => book.rank), [1, 2]);
+}
+
 // 起点：一个榜单打不开只跳这一个，剩下 9 个照采（--type all 不再被一次超时掐死）
 function testQidianRankIsolation() {
   const scraper = path.join(
@@ -1723,6 +1774,7 @@ testLocalDateStamp(shortUtilsPath);
 testScraperImports();
 testCliResultGate(longUtilsPath);
 testJjwxcDetailFailureIsolation();
+testQidianDynamicRankDiscovery();
 testQidianRankIsolation();
 testQidianFieldContractAndDescriptionPreservation();
 testStoryCaseCollector();
