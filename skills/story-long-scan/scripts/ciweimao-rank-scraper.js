@@ -292,13 +292,18 @@ function main() {
   const norm = (value) => String(value || "").replace(/\s+/g, "");
   const targetEntries = [];
   const seenIds = new Set();
+  let unmatchedRankEntries = 0;
 
   for (const rt of targetTypes) {
     const section = sections.find((item) => item.name === rt.header);
     if (!section) continue;
     for (const entry of section.entries) {
       const matched = urls.find((item) => norm(item.title) === norm(entry.title));
-      if (!matched || !matched.bookId || seenIds.has(String(matched.bookId))) continue;
+      if (!matched || !matched.bookId) {
+        unmatchedRankEntries++;
+        continue;
+      }
+      if (seenIds.has(String(matched.bookId))) continue;
       seenIds.add(String(matched.bookId));
       targetEntries.push({
         bookId: String(matched.bookId),
@@ -323,10 +328,28 @@ function main() {
   );
 
   let written = 0;
+  let failed = 0;
+  const partialReasons = [];
+
+  if (unmatchedRankEntries > 0) {
+    partialReasons.push(`rank entries without book ids: ${unmatchedRankEntries}`);
+  }
+  if (details.size < targetEntries.length) {
+    partialReasons.push(`detail fetch incomplete: ${details.size}/${targetEntries.length}`);
+  }
+  if (categoryUnknownCount > 0) {
+    partialReasons.push(`unknown categories: ${categoryUnknownCount}`);
+  }
+  if (introCount < details.size) {
+    partialReasons.push(`missing intros after detail fetch: ${details.size - introCount}`);
+  }
+
   for (const rt of targetTypes) {
     try {
       const section = sections.find((item) => item.name === rt.header);
       if (!section || !section.entries.length) {
+        failed++;
+        partialReasons.push(`${rt.label}: no rank data`);
         console.log(`  ⚠ ${rt.label} 无数据，跳过`);
         continue;
       }
@@ -349,6 +372,8 @@ function main() {
       }
 
       if (!rows.length) {
+        failed++;
+        partialReasons.push(`${rt.label}: no admissible full intros`);
         console.log(`  ⚠ ${rt.label} 没有拿到非女频完整简介，跳过输出`);
         continue;
       }
@@ -383,11 +408,20 @@ function main() {
       written++;
       console.log(`  ✓ ${rt.label}：${rows.length} 本完整简介 → ${filepath}`);
     } catch (rankErr) {
-      console.error(`[ciweimao] ${rt.label} 处理出错，跳过: ${rankErr.message}`);
+      failed++;
+      const message = rankErr && rankErr.message ? rankErr.message : String(rankErr);
+      partialReasons.push(`${rt.label}: ${message}`);
+      console.error(`[ciweimao] ${rt.label} 处理出错，跳过: ${message}`);
     }
   }
 
-  return written;
+  return {
+    planned: targetTypes.length,
+    written,
+    failed,
+    partial: failed > 0 || partialReasons.length > 0,
+    partialReasons,
+  };
 }
 
 if (require.main === module) {
