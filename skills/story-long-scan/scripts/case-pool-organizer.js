@@ -316,6 +316,70 @@ function renderCaseMarkdown(cases) {
   return lines.join("\n");
 }
 
+function parseCliArgs(argv) {
+  let input = "";
+  let output = "";
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--input" && argv[i + 1]) input = argv[++i];
+    else if (argv[i].startsWith("--input=")) input = argv[i].slice("--input=".length);
+    else if (argv[i] === "--output" && argv[i + 1]) output = argv[++i];
+    else if (argv[i].startsWith("--output=")) output = argv[i].slice("--output=".length);
+  }
+  return { input, output };
+}
+
+function parseCaseJSONL(text) {
+  return String(text || "")
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => JSON.parse(line))
+    .filter((item) => item && item.title && item.intro)
+    .map((item) => ({ title: String(item.title), intro: String(item.intro) }));
+}
+
+function summarizeOrganization(cases) {
+  const summary = [];
+  for (const section of organizeCases(cases)) {
+    for (const group of section.groups) {
+      summary.push({
+        section: section.section,
+        group: group.group,
+        count: group.cases.length,
+      });
+    }
+  }
+  return summary;
+}
+
+function main() {
+  const fs = require("fs");
+  const path = require("path");
+  const { input, output } = parseCliArgs(process.argv.slice(2));
+  if (!input || !output) {
+    throw new Error("用法: case-pool-organizer.js --input 榜单数据.jsonl --output 榜单数据.md");
+  }
+
+  const cases = parseCaseJSONL(fs.readFileSync(path.resolve(input), "utf8"));
+  const rendered = renderCaseMarkdown(cases);
+  fs.mkdirSync(path.dirname(path.resolve(output)), { recursive: true });
+  fs.writeFileSync(path.resolve(output), rendered, "utf8");
+
+  for (const item of summarizeOrganization(cases)) {
+    console.log(`${item.section} / ${item.group}: ${item.count}`);
+  }
+  console.log(`总 Case: ${cases.length}`);
+}
+
+if (require.main === module) {
+  try {
+    main();
+  } catch (error) {
+    console.error(`case pool organize failed: ${error && error.message ? error.message : error}`);
+    process.exitCode = 1;
+  }
+}
+
 module.exports = {
   WATER_ORDER,
   RULES,
@@ -323,4 +387,7 @@ module.exports = {
   classifyCaseWater,
   organizeCases,
   renderCaseMarkdown,
+  parseCliArgs,
+  parseCaseJSONL,
+  summarizeOrganization,
 };
