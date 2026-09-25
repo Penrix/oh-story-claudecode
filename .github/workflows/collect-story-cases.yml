@@ -40,25 +40,8 @@ jobs:
           reason="manual/push run"
 
           if [ "$GITHUB_EVENT_NAME" = "schedule" ] && [ -f data/story-cases/采集状态.json ]; then
-            read -r complete last_epoch < <(
-              python3 - <<'PY'
-import json
-from datetime import datetime, timezone
-
-try:
-    with open("data/story-cases/采集状态.json", "r", encoding="utf-8") as f:
-        state = json.load(f)
-    complete = "1" if state.get("complete") is True else "0"
-    raw = state.get("completed_at") or ""
-    if raw.endswith("Z"):
-        raw = raw[:-1] + "+00:00"
-    dt = datetime.fromisoformat(raw) if raw else None
-    epoch = int(dt.timestamp()) if dt else 0
-    print(complete, epoch)
-except Exception:
-    print("0 0")
-PY
-            )
+            state_values=$(python3 -c 'import json,datetime; p="data/story-cases/采集状态.json"; s=json.load(open(p,encoding="utf-8")); raw=s.get("completed_at") or ""; raw=raw[:-1]+"+00:00" if raw.endswith("Z") else raw; dt=datetime.datetime.fromisoformat(raw) if raw else None; print("1" if s.get("complete") is True else "0", int(dt.timestamp()) if dt else 0)' 2>/dev/null || echo "0 0")
+            read -r complete last_epoch <<< "$state_values"
             now_epoch=$(date +%s)
             age=$((now_epoch - last_epoch))
             if [ "$complete" = "1" ] && [ "$last_epoch" -gt 0 ] && [ "$age" -lt 64800 ]; then
@@ -272,27 +255,7 @@ PY
             complete=false
           fi
 
-          python3 - "$complete" "$cases" "$pending" "$BROWSER_READY" "$COLLECTION_PARTIAL" <<'PY'
-import json
-import os
-import sys
-from datetime import datetime, timezone
-
-complete = sys.argv[1].lower() == "true"
-state = {
-    "completed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-    "complete": complete,
-    "cases": int(sys.argv[2]),
-    "pending_qidian_intros": int(sys.argv[3]),
-    "browser_ready": sys.argv[4] == "1",
-    "partial": sys.argv[5] == "1",
-    "run_id": os.environ.get("GITHUB_RUN_ID", ""),
-}
-with open(".case-state/采集状态.json", "w", encoding="utf-8") as f:
-    json.dump(state, f, ensure_ascii=False, indent=2)
-    f.write("\n")
-print(json.dumps(state, ensure_ascii=False))
-PY
+          COMPLETE="$complete" CASES="$cases" PENDING="$pending" BROWSER="$BROWSER_READY" PARTIAL="$COLLECTION_PARTIAL" python3 -c 'import json,os,datetime; state={"completed_at":datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00","Z"),"complete":os.environ["COMPLETE"].lower()=="true","cases":int(os.environ["CASES"]),"pending_qidian_intros":int(os.environ["PENDING"]),"browser_ready":os.environ["BROWSER"]=="1","partial":os.environ["PARTIAL"]=="1","run_id":os.environ.get("GITHUB_RUN_ID","")}; f=open(".case-state/采集状态.json","w",encoding="utf-8"); json.dump(state,f,ensure_ascii=False,indent=2); f.write("\\n"); f.close(); print(json.dumps(state,ensure_ascii=False))'
 
       - name: Show Case count
         if: steps.gate.outputs.should_run == '1'
