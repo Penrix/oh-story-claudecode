@@ -15,6 +15,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { renderCaseMarkdown, classifyCaseWater, organizeCases } = require("./case-pool-organizer");
 
 function parseArgs(argv) {
   const inputs = [];
@@ -193,14 +194,6 @@ function dedupeCases(cases) {
   return { cases: [...map.values()], duplicates };
 }
 
-function renderCaseMarkdown(cases) {
-  const lines = ["# 榜单数据", ""];
-  for (const item of cases) {
-    lines.push(`## 《${item.title}》`, "", item.intro, "", "---", "");
-  }
-  return lines.join("\n");
-}
-
 function buildCasePool(markdowns, minChars = 80) {
   const extracted = markdowns.flatMap(extractCasesFromMarkdown);
   const accepted = [];
@@ -277,5 +270,7 @@ module.exports = {
   extractCasesFromMarkdown,
   dedupeCases,
   renderCaseMarkdown,
+  classifyCaseWater,
+  organizeCases,
   buildCasePool,
 };
