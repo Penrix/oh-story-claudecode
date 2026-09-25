@@ -1,6 +1,6 @@
 ---
 name: story-long-scan
-version: 1.3.0
+version: 1.4.0
 description: "从起点、番茄男频、刺猬猫等真实网文榜单批量采集故事 Seed 可用 Case。榜单只负责市场预筛，女频不进入生产池，最终只保留书名与完整、有内容的真实简介。触发方式：/story-long-scan、/长篇扫榜、/榜单采集、「大量采集榜单数据」「采集故事Case」。"
 metadata: {"openclaw":{"source":"https://github.com/Penrix/oh-story-claudecode"}}
 ---
@@ -107,7 +107,7 @@ metadata: {"openclaw":{"source":"https://github.com/Penrix/oh-story-claudecode"}
 
 三个平台最后都进入同一个历史累计 Case 池，不为平台分别建立创作输入库。
 
-生产工作流每天自动执行一轮；榜单按日级变化已经足够，不做小时级高频抓取。单个平台失败只记录警告，不阻断其他平台结果进入累计池。
+生产工作流采用“日级目标 + 冗余补跑”而不是单一 cron：每天提供多个触发窗口；最近 18 小时已有一次完整成功时后续窗口自动跳过，若上一轮失败或只完成部分来源，下一窗口继续补跑。单个平台或浏览器环境失败不能阻断已经拿到的数据进入累计池。
 
 **明确不进入当前生产池：**
 
@@ -134,13 +134,25 @@ metadata: {"openclaw":{"source":"https://github.com/Penrix/oh-story-claudecode"}
 
 ### 起点
 
-起点优先读取移动端 SSR，不需要 Chrome：
+起点分两层采集。
+
+第一层是固定移动端 SSR，不需要 Chrome，负责在浏览器环境故障时仍然保住一批稳定榜单：
 
 ```bash
-node scripts/qidian-rank-scraper.js --type all --outdir {raw_dir}
+node scripts/qidian-rank-scraper.js --type all --mode mobile --outdir {raw_dir}
 ```
 
-目标不是研究各榜排名，而是尽量取得多个真实榜单里的候选作品和完整简介。
+其中 `/rank/newfans/` 明确按“书友榜”处理，不能再误标成收藏榜。
+
+第二层在 Chrome/CDP 可用时，从当前起点排行榜首页动态发现实际存在的非女频榜单，并顺着分页继续扩展：
+
+```bash
+node scripts/qidian-rank-discovery-scraper.js --pages 5 --outdir {raw_dir}
+```
+
+动态发现层的目的就是避免固定常量落后于平台：留存榜、追读榜、收藏榜、更新榜、VIP 收藏等只要仍出现在当前排行榜入口，就自动成为候选来源；女生/女频入口必须过滤。
+
+目标不是研究各榜排名，而是尽量取得更多真实榜单里的候选作品和完整简介。
 
 ### 番茄男频
 
@@ -149,10 +161,10 @@ node scripts/qidian-rank-scraper.js --type all --outdir {raw_dir}
 先用 `browser-cdp` 启动 Chrome，再执行：
 
 ```bash
-node scripts/fanqie-rank-scraper.js --channel 1 --type all --top 20 --outdir {raw_dir}
+node scripts/fanqie-rank-scraper.js --channel 1 --type all --top 50 --outdir {raw_dir}
 ```
 
-默认把男频阅读榜、新书榜和全部可发现男频题材都当作**候选入口**采集。
+默认把男频阅读榜、新书榜和全部可发现男频题材都当作**候选入口**采集；生产工作流当前每个题材最多取前 50，本地或专项扩充时可继续提高。
 
 这里不存在“新书更重要”或“旧书更重要”。两类作品进入原始目录后完全同权，后续只看它是否能提供可用的完整简介。
 
