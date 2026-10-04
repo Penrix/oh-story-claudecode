@@ -1,9 +1,9 @@
 {
-  "completed_at": "2026-10-04T17:17:53.874288Z",
+  "completed_at": "2026-10-04T22:01:29.026626Z",
   "complete": false,
-  "cases": 2425,
-  "pending_qidian_intros": 101,
+  "cases": 2438,
+  "pending_qidian_intros": 299,
   "browser_ready": true,
   "partial": true,
-  "run_id": "37218263822"
+  "run_id": "37236388670"
 }
