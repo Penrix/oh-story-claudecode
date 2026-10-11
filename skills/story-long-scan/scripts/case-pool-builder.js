@@ -21,6 +21,7 @@ function parseArgs(argv) {
   const inputs = [];
   let outdir = ".";
   let minChars = 1;
+  let excludeFile = "";
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -28,6 +29,10 @@ function parseArgs(argv) {
       inputs.push(argv[++i]);
     } else if (arg.startsWith("--input=")) {
       inputs.push(arg.slice("--input=".length));
+    } else if (arg === "--exclude" && argv[i + 1]) {
+      excludeFile = argv[++i];
+    } else if (arg.startsWith("--exclude=")) {
+      excludeFile = arg.slice("--exclude=".length);
     } else if (arg === "--outdir" && argv[i + 1]) {
       outdir = argv[++i];
     } else if (arg.startsWith("--outdir=")) {
@@ -44,7 +49,7 @@ function parseArgs(argv) {
     throw new Error("--min-chars 必须是正整数");
   }
 
-  return { inputs, outdir, minChars: Math.floor(minChars) };
+  return { inputs, outdir, minChars: Math.floor(minChars), excludeFile };
 }
 
 function collectMarkdownFiles(inputPath, out = []) {
@@ -160,6 +165,22 @@ function extractCasesFromMarkdown(markdown) {
   return cases;
 }
 
+function caseKey(title) {
+  return normalizeTitle(title).replace(/[《》\s]/g, "").toLowerCase();
+}
+
+function loadExcludedTitles(file) {
+  const excluded = new Set();
+  if (!file || !fs.existsSync(file)) return excluded;
+  for (const line of fs.readFileSync(file, "utf8").split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const item = JSON.parse(trimmed);
+    if (item && item.title) excluded.add(caseKey(item.title));
+  }
+  return excluded;
+}
+
 function dedupeCases(cases) {
   const map = new Map();
   let duplicates = 0;
@@ -168,7 +189,7 @@ function dedupeCases(cases) {
     const title = normalizeTitle(item.title);
     const intro = normalizeIntro(item.intro);
     if (!title || !intro) continue;
-    const key = title.replace(/[《》\s]/g, "").toLowerCase();
+    const key = caseKey(title);
     const previous = map.get(key);
     if (!previous) {
       map.set(key, { title, intro });
@@ -183,7 +204,7 @@ function dedupeCases(cases) {
   return { cases: [...map.values()], duplicates };
 }
 
-function buildCasePool(markdowns, minChars = 1) {
+function buildCasePool(markdowns, minChars = 1, excludedTitles = new Set()) {
   const extracted = markdowns.flatMap(extractCasesFromMarkdown);
   const accepted = [];
   const rejected = { empty: 0, placeholder: 0, femaleChannel: 0, short: 0 };
@@ -195,25 +216,29 @@ function buildCasePool(markdowns, minChars = 1) {
   }
 
   const deduped = dedupeCases(accepted);
+  const kept = deduped.cases.filter((item) => !excludedTitles.has(caseKey(item.title)));
+  const excludedByCleaning = deduped.cases.length - kept.length;
   return {
-    cases: deduped.cases,
+    cases: kept,
     stats: {
       extracted: extracted.length,
       acceptedBeforeDedupe: accepted.length,
       duplicates: deduped.duplicates,
-      final: deduped.cases.length,
+      final: kept.length,
+      excludedByCleaning,
       rejected,
     },
   };
 }
 
 function main() {
-  const { inputs, outdir, minChars } = parseArgs(process.argv.slice(2));
+  const { inputs, outdir, minChars, excludeFile } = parseArgs(process.argv.slice(2));
   const files = [...new Set(inputs.flatMap((p) => collectMarkdownFiles(path.resolve(p))))].sort();
   if (!files.length) throw new Error("没有找到可汇总的 Case 源 Markdown");
 
   const markdowns = files.map((file) => fs.readFileSync(file, "utf8"));
-  const result = buildCasePool(markdowns, minChars);
+  const excludedTitles = loadExcludedTitles(excludeFile);
+  const result = buildCasePool(markdowns, minChars, excludedTitles);
 
   fs.mkdirSync(outdir, { recursive: true });
   const mdPath = path.join(outdir, "榜单数据.md");
@@ -230,6 +255,7 @@ function main() {
   console.log(`候选简介：${s.extracted}`);
   console.log(`通过内容过滤：${s.acceptedBeforeDedupe}`);
   console.log(`去重：${s.duplicates}`);
+  console.log(`清洗排除：${s.excludedByCleaning || 0}`);
   console.log(`最终 Case：${s.final}`);
   console.log(
     `淘汰：empty=${s.rejected.empty || 0}, placeholder=${s.rejected.placeholder || 0}, femaleChannel=${s.rejected.femaleChannel || 0}, short=${s.rejected.short || 0}`
@@ -257,6 +283,8 @@ module.exports = {
   evaluateIntro,
   isUsefulIntro,
   extractCasesFromMarkdown,
+  caseKey,
+  loadExcludedTitles,
   dedupeCases,
   renderCaseMarkdown,
   classifyCaseWater,
