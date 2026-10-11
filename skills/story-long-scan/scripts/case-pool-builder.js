@@ -20,7 +20,7 @@ const { renderCaseMarkdown, classifyCaseWater, organizeCases } = require("./case
 function parseArgs(argv) {
   const inputs = [];
   let outdir = ".";
-  let minChars = 80;
+  let minChars = 1;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -88,7 +88,7 @@ function introBodyWithoutLeadingTags(text) {
     .trim();
 }
 
-function evaluateIntro(intro, minChars = 80) {
+function evaluateIntro(intro, minChars = 1) {
   const text = normalizeIntro(intro);
   if (!text) return { ok: false, reason: "empty" };
   if (/^(?:暂无|暂未|没有)(?:简介|介绍|内容)?[。.!！]?$/u.test(text)) {
@@ -105,21 +105,10 @@ function evaluateIntro(intro, minChars = 80) {
   const chars = contentLength(body);
   if (chars < minChars) return { ok: false, reason: "short" };
 
-  const sentenceCount = body
-    .split(/[。！？!?]+/u)
-    .map((x) => x.trim())
-    .filter(Boolean).length;
-
-  // Seed Case 需要能看见至少两拍真实叙述。哪怕单句写得很长，只要仍然只有一句，
-  // 信息密度也不足以支撑后续重演；不要用长度豁免它。
-  if (sentenceCount < 2) {
-    return { ok: false, reason: "singleSentence" };
-  }
-
   return { ok: true, reason: "ok" };
 }
 
-function isUsefulIntro(intro, minChars = 80) {
+function isUsefulIntro(intro, minChars = 1) {
   return evaluateIntro(intro, minChars).ok;
 }
 
@@ -194,10 +183,10 @@ function dedupeCases(cases) {
   return { cases: [...map.values()], duplicates };
 }
 
-function buildCasePool(markdowns, minChars = 80) {
+function buildCasePool(markdowns, minChars = 1) {
   const extracted = markdowns.flatMap(extractCasesFromMarkdown);
   const accepted = [];
-  const rejected = { empty: 0, placeholder: 0, femaleChannel: 0, short: 0, singleSentence: 0 };
+  const rejected = { empty: 0, placeholder: 0, femaleChannel: 0, short: 0 };
 
   for (const item of extracted) {
     const verdict = evaluateIntro(item.intro, minChars);
@@ -243,7 +232,7 @@ function main() {
   console.log(`去重：${s.duplicates}`);
   console.log(`最终 Case：${s.final}`);
   console.log(
-    `淘汰：empty=${s.rejected.empty || 0}, placeholder=${s.rejected.placeholder || 0}, femaleChannel=${s.rejected.femaleChannel || 0}, short=${s.rejected.short || 0}, singleSentence=${s.rejected.singleSentence || 0}`
+    `淘汰：empty=${s.rejected.empty || 0}, placeholder=${s.rejected.placeholder || 0}, femaleChannel=${s.rejected.femaleChannel || 0}, short=${s.rejected.short || 0}`
   );
   console.log(`已写入：${mdPath}`);
   console.log(`已写入：${jsonlPath}`);
