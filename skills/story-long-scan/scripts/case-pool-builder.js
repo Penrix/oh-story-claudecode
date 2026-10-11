@@ -103,7 +103,13 @@ function evaluateIntro(intro, minChars = 1) {
 
   // 明确自我标注为女频/女性向/女主文的作品，不进入男频 Case 池。
   // 只认独立标签，避免误杀“穿到女频”“吐槽女频文”等男主视角作品。
-  if (/[【\[]\s*(?:女频|女性向|女生频道|女主文|女主视角)\s*[】\]]/u.test(text)) {
+  // 复合平台标签如【双女主+纯百＋兽娘】也应按独立标签识别女性向；
+  // 不能将提及“女主”“女频世界”的男主文误判为女频。
+  const femaleLabels = new Set(["女频", "女性向", "女生频道", "女主文", "女主视角", "百合", "百合文", "纯百", "GL", "女频言情"]);
+  const explicitFemale = [...text.matchAll(/[【\\[]([^】\\]]{1,180})[】\\]]/gu)].some((m) =>
+    m[1].split(/[+＋、，,;；|｜/\\s]+/u).some((part) => femaleLabels.has(part.trim()))
+  );
+  if (explicitFemale) {
     return { ok: false, reason: "femaleChannel" };
   }
 
