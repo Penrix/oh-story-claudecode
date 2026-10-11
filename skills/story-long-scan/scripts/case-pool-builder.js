@@ -15,6 +15,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const { renderCaseMarkdown, classifyCaseWater, organizeCases } = require("./case-pool-organizer");
 
 function parseArgs(argv) {
@@ -169,14 +170,24 @@ function caseKey(title) {
   return normalizeTitle(title).replace(/[《》\s]/g, "").toLowerCase();
 }
 
-function loadExcludedTitles(file) {
+function introSha256(intro) {
+  return crypto.createHash("sha256").update(normalizeIntro(intro), "utf8").digest("hex");
+}
+
+function caseFingerprint(title, intro) {
+  return `${caseKey(title)}:${introSha256(intro)}`;
+}
+
+function loadExcludedCases(file) {
   const excluded = new Set();
   if (!file || !fs.existsSync(file)) return excluded;
   for (const line of fs.readFileSync(file, "utf8").split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     const item = JSON.parse(trimmed);
-    if (item && item.title) excluded.add(caseKey(item.title));
+    if (item && item.title && item.intro_sha256) {
+      excluded.add(`${caseKey(item.title)}:${String(item.intro_sha256).toLowerCase()}`);
+    }
   }
   return excluded;
 }
@@ -204,7 +215,7 @@ function dedupeCases(cases) {
   return { cases: [...map.values()], duplicates };
 }
 
-function buildCasePool(markdowns, minChars = 1, excludedTitles = new Set()) {
+function buildCasePool(markdowns, minChars = 1, excludedCases = new Set()) {
   const extracted = markdowns.flatMap(extractCasesFromMarkdown);
   const accepted = [];
   const rejected = { empty: 0, placeholder: 0, femaleChannel: 0, short: 0 };
@@ -216,7 +227,7 @@ function buildCasePool(markdowns, minChars = 1, excludedTitles = new Set()) {
   }
 
   const deduped = dedupeCases(accepted);
-  const kept = deduped.cases.filter((item) => !excludedTitles.has(caseKey(item.title)));
+  const kept = deduped.cases.filter((item) => !excludedCases.has(caseFingerprint(item.title, item.intro)));
   const excludedByCleaning = deduped.cases.length - kept.length;
   return {
     cases: kept,
@@ -237,8 +248,8 @@ function main() {
   if (!files.length) throw new Error("没有找到可汇总的 Case 源 Markdown");
 
   const markdowns = files.map((file) => fs.readFileSync(file, "utf8"));
-  const excludedTitles = loadExcludedTitles(excludeFile);
-  const result = buildCasePool(markdowns, minChars, excludedTitles);
+  const excludedCases = loadExcludedCases(excludeFile);
+  const result = buildCasePool(markdowns, minChars, excludedCases);
 
   fs.mkdirSync(outdir, { recursive: true });
   const mdPath = path.join(outdir, "榜单数据.md");
@@ -284,7 +295,9 @@ module.exports = {
   isUsefulIntro,
   extractCasesFromMarkdown,
   caseKey,
-  loadExcludedTitles,
+  introSha256,
+  caseFingerprint,
+  loadExcludedCases,
   dedupeCases,
   renderCaseMarkdown,
   classifyCaseWater,
