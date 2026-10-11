@@ -15,12 +15,14 @@
 
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const { renderCaseMarkdown, classifyCaseWater, organizeCases } = require("./case-pool-organizer");
 
 function parseArgs(argv) {
   const inputs = [];
   let outdir = ".";
-  let minChars = 80;
+  let minChars = 1;
+  let excludeFile = "";
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -28,6 +30,10 @@ function parseArgs(argv) {
       inputs.push(argv[++i]);
     } else if (arg.startsWith("--input=")) {
       inputs.push(arg.slice("--input=".length));
+    } else if (arg === "--exclude" && argv[i + 1]) {
+      excludeFile = argv[++i];
+    } else if (arg.startsWith("--exclude=")) {
+      excludeFile = arg.slice("--exclude=".length);
     } else if (arg === "--outdir" && argv[i + 1]) {
       outdir = argv[++i];
     } else if (arg.startsWith("--outdir=")) {
@@ -44,7 +50,7 @@ function parseArgs(argv) {
     throw new Error("--min-chars 必须是正整数");
   }
 
-  return { inputs, outdir, minChars: Math.floor(minChars) };
+  return { inputs, outdir, minChars: Math.floor(minChars), excludeFile };
 }
 
 function collectMarkdownFiles(inputPath, out = []) {
@@ -88,7 +94,7 @@ function introBodyWithoutLeadingTags(text) {
     .trim();
 }
 
-function evaluateIntro(intro, minChars = 80) {
+function evaluateIntro(intro, minChars = 1) {
   const text = normalizeIntro(intro);
   if (!text) return { ok: false, reason: "empty" };
   if (/^(?:暂无|暂未|没有)(?:简介|介绍|内容)?[。.!！]?$/u.test(text)) {
@@ -105,21 +111,10 @@ function evaluateIntro(intro, minChars = 80) {
   const chars = contentLength(body);
   if (chars < minChars) return { ok: false, reason: "short" };
 
-  const sentenceCount = body
-    .split(/[。！？!?]+/u)
-    .map((x) => x.trim())
-    .filter(Boolean).length;
-
-  // Seed Case 需要能看见至少两拍真实叙述。哪怕单句写得很长，只要仍然只有一句，
-  // 信息密度也不足以支撑后续重演；不要用长度豁免它。
-  if (sentenceCount < 2) {
-    return { ok: false, reason: "singleSentence" };
-  }
-
   return { ok: true, reason: "ok" };
 }
 
-function isUsefulIntro(intro, minChars = 80) {
+function isUsefulIntro(intro, minChars = 1) {
   return evaluateIntro(intro, minChars).ok;
 }
 
@@ -171,6 +166,32 @@ function extractCasesFromMarkdown(markdown) {
   return cases;
 }
 
+function caseKey(title) {
+  return normalizeTitle(title).replace(/[《》\s]/g, "").toLowerCase();
+}
+
+function introSha256(intro) {
+  return crypto.createHash("sha256").update(normalizeIntro(intro), "utf8").digest("hex");
+}
+
+function caseFingerprint(title, intro) {
+  return `${caseKey(title)}:${introSha256(intro)}`;
+}
+
+function loadExcludedCases(file) {
+  const excluded = new Set();
+  if (!file || !fs.existsSync(file)) return excluded;
+  for (const line of fs.readFileSync(file, "utf8").split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const item = JSON.parse(trimmed);
+    if (item && item.title && item.intro_sha256) {
+      excluded.add(`${caseKey(item.title)}:${String(item.intro_sha256).toLowerCase()}`);
+    }
+  }
+  return excluded;
+}
+
 function dedupeCases(cases) {
   const map = new Map();
   let duplicates = 0;
@@ -179,7 +200,7 @@ function dedupeCases(cases) {
     const title = normalizeTitle(item.title);
     const intro = normalizeIntro(item.intro);
     if (!title || !intro) continue;
-    const key = title.replace(/[《》\s]/g, "").toLowerCase();
+    const key = caseKey(title);
     const previous = map.get(key);
     if (!previous) {
       map.set(key, { title, intro });
@@ -194,10 +215,10 @@ function dedupeCases(cases) {
   return { cases: [...map.values()], duplicates };
 }
 
-function buildCasePool(markdowns, minChars = 80) {
+function buildCasePool(markdowns, minChars = 1, excludedCases = new Set()) {
   const extracted = markdowns.flatMap(extractCasesFromMarkdown);
   const accepted = [];
-  const rejected = { empty: 0, placeholder: 0, femaleChannel: 0, short: 0, singleSentence: 0 };
+  const rejected = { empty: 0, placeholder: 0, femaleChannel: 0, short: 0 };
 
   for (const item of extracted) {
     const verdict = evaluateIntro(item.intro, minChars);
@@ -206,25 +227,29 @@ function buildCasePool(markdowns, minChars = 80) {
   }
 
   const deduped = dedupeCases(accepted);
+  const kept = deduped.cases.filter((item) => !excludedCases.has(caseFingerprint(item.title, item.intro)));
+  const excludedByCleaning = deduped.cases.length - kept.length;
   return {
-    cases: deduped.cases,
+    cases: kept,
     stats: {
       extracted: extracted.length,
       acceptedBeforeDedupe: accepted.length,
       duplicates: deduped.duplicates,
-      final: deduped.cases.length,
+      final: kept.length,
+      excludedByCleaning,
       rejected,
     },
   };
 }
 
 function main() {
-  const { inputs, outdir, minChars } = parseArgs(process.argv.slice(2));
+  const { inputs, outdir, minChars, excludeFile } = parseArgs(process.argv.slice(2));
   const files = [...new Set(inputs.flatMap((p) => collectMarkdownFiles(path.resolve(p))))].sort();
   if (!files.length) throw new Error("没有找到可汇总的 Case 源 Markdown");
 
   const markdowns = files.map((file) => fs.readFileSync(file, "utf8"));
-  const result = buildCasePool(markdowns, minChars);
+  const excludedCases = loadExcludedCases(excludeFile);
+  const result = buildCasePool(markdowns, minChars, excludedCases);
 
   fs.mkdirSync(outdir, { recursive: true });
   const mdPath = path.join(outdir, "榜单数据.md");
@@ -241,9 +266,10 @@ function main() {
   console.log(`候选简介：${s.extracted}`);
   console.log(`通过内容过滤：${s.acceptedBeforeDedupe}`);
   console.log(`去重：${s.duplicates}`);
+  console.log(`清洗排除：${s.excludedByCleaning || 0}`);
   console.log(`最终 Case：${s.final}`);
   console.log(
-    `淘汰：empty=${s.rejected.empty || 0}, placeholder=${s.rejected.placeholder || 0}, femaleChannel=${s.rejected.femaleChannel || 0}, short=${s.rejected.short || 0}, singleSentence=${s.rejected.singleSentence || 0}`
+    `淘汰：empty=${s.rejected.empty || 0}, placeholder=${s.rejected.placeholder || 0}, femaleChannel=${s.rejected.femaleChannel || 0}, short=${s.rejected.short || 0}`
   );
   console.log(`已写入：${mdPath}`);
   console.log(`已写入：${jsonlPath}`);
@@ -268,6 +294,10 @@ module.exports = {
   evaluateIntro,
   isUsefulIntro,
   extractCasesFromMarkdown,
+  caseKey,
+  introSha256,
+  caseFingerprint,
+  loadExcludedCases,
   dedupeCases,
   renderCaseMarkdown,
   classifyCaseWater,

@@ -237,7 +237,8 @@ jobs:
           fi
           node skills/story-long-scan/scripts/case-pool-builder.js \
             "${inputs[@]}" \
-            --min-chars 80 \
+            --min-chars 1 \
+            --exclude data/story-cases/清洗排除.jsonl \
             --outdir .case-out
 
       - name: Record collection state
