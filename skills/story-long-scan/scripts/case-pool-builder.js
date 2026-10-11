@@ -106,8 +106,8 @@ function evaluateIntro(intro, minChars = 1) {
   // 复合平台标签如【双女主+纯百＋兽娘】也应按独立标签识别女性向；
   // 不能将提及“女主”“女频世界”的男主文误判为女频。
   const femaleLabels = new Set(["女频", "女性向", "女生频道", "女主文", "女主视角", "百合", "百合文", "纯百", "GL", "女频言情"]);
-  const explicitFemale = [...text.matchAll(/[【\\[]([^】\\]]{1,180})[】\\]]/gu)].some((m) =>
-    m[1].split(/[+＋、，,;；|｜/\\s]+/u).some((part) => femaleLabels.has(part.trim()))
+  const explicitFemale = [...text.matchAll(/[【\[]([^】\]]{1,180})[】\]]/gu)].some((m) =>
+    m[1].split(/[+＋、，,;；|｜\/\s]+/u).some((part) => femaleLabels.has(part.trim()))
   );
   if (explicitFemale) {
     return { ok: false, reason: "femaleChannel" };
