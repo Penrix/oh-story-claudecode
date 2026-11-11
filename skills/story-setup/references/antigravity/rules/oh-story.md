@@ -4,9 +4,8 @@ trigger: always_on
 
 # oh-story writing project rules
 
-This workspace uses the oh-story web-fiction skill pack. Discover skills from
-`.agents/skills/`; read the selected skill's `SKILL.md` before executing it and
-load its references only when that skill instructs you to do so.
+This workspace uses the oh-story web-fiction skills in `.agents/skills/`.
+Read the selected skill's `SKILL.md` first, then load references as it directs.
 
 ## Routing
 
@@ -18,6 +17,7 @@ load its references only when that skill instructs you to do so.
 - Adversarial review: `story-review`
 - Import an existing story: `story-import`
 - Cover generation: `story-cover`
+- Publishing preparation (book title, synopsis, platform tags): `story-publish`
 - Ambiguous story intent: `story`
 - Project deployment/update: `story-setup`
 - Reuse an authenticated Chrome session: `browser-cdp`
@@ -36,9 +36,30 @@ load its references only when that skill instructs you to do so.
 - After prose is written, resolve every deterministic finding injected by the
   oh-story Antigravity hooks before continuing to another chapter.
 - Prefer the seven deployed custom agents in `.agents/agents/` for specialist
-  work. Call `invoke_subagent` with the agent's `TypeName`; if the runtime cannot
-  start them, use the skill's documented solo/direct fallback instead of
-  failing the workflow.
+  work. Call `invoke_subagent` with `TypeName`, a concise `Role`, and `Prompt`
+  (include concrete file paths in `Prompt` so read-only subagents in `agy` CLI
+  can read them directly via `read_file`/`view_file` when `find_by_name` or
+  `grep_search` is unavailable). Because `invoke_subagent` runs asynchronously
+  in the background, end the turn to wait for the subagent's `send_message`
+  wakeup before running dependent steps such as `manage_analysis_run.py commit`
+  or review synthesis; if the runtime cannot start custom subagents, use the
+  skill's documented solo/direct fallback instead of failing the workflow.
+
+## Working with the author
+
+- Use plain story terms (book, chapter, outline, setting) in the main reply.
+  Quote script, field, or status names when reporting an error.
+- Skill templates marked `<!-- author-report -->` are format references only:
+  reply with the text inside, never the code fence.
+- When the author asks to remember, forget, or confirm a writing habit or
+  preference, use author memory management in `story-long-write` or
+  `story-short-write`, based on the author's explicit type or the active book.
+  For a general habit with no active book, use the long-form entry. Ask which
+  book only when a book-specific preference has no identifiable target; do not create a book.
+  Write `.story/作者记忆/` in the relevant workspace or book directory. Never store it in Antigravity's
+  built-in memory. One-off requests are simply carried out, not recorded.
+- Never modify installed skill files (`SKILL.md`, `references/`, `scripts/`) in
+  this workspace (redeploying via `story-setup` is the exception). If a skill script fails, stop and report its error and command; do not patch around it.
 
 ## Context recovery
 

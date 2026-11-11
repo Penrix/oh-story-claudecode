@@ -7,10 +7,12 @@
 #   2) 用户导出 GBK 区域设置（LANG=zh_CN.GBK）时，gawk/GNU sed/GNU grep/bash 通配
 #      按 GBK 多字节解码 UTF-8 内容/路径会乱。修法：hook 内 export LC_ALL=C 走字节匹配。
 #
-# 本测试两段都跑：
-#   Part 1：用 PYTHONIOENCODING=gbk 强制 python stdout 走 cp936，复现坑 1（任何平台可跑）。
+# 坑 1 随 #243 hook 去掉内嵌 python 已不存在（node 按 UTF-8 写 stdout）。本测试覆盖：
+#   Part 1a：默认区域下长篇/短篇相对路径的拦截与放行（三平台都跑）。
+#   Part 1b/1c：Windows 盘符绝对路径分类（issue #184；1b 任何平台可跑，1c 仅 Windows/MSYS）。
 #   Part 2：在真实 GBK 区域下跑全部 hook，复现坑 2（需系统装有 zh_CN.GBK 类 locale；
 #           macOS 自带，CI ubuntu 由 workflow localedef 生成，Windows Git Bash 若无则跳过）。
+# 常规区域下细纲门的长/短篇拦放由 check-story-setup-deployment.sh TS11 覆盖。
 #
 # 用法：bash scripts/test-hook-encoding-portable.sh
 set -euo pipefail
@@ -25,12 +27,11 @@ HOOKS_DIR="$REPO_ROOT/skills/story-setup/references/templates/hooks"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-# 探测可用解释器（Windows 上 python3 可能是 Store 占位程序 exit 49）
-for PYBIN in python3 python py; do "$PYBIN" -c "" 2>/dev/null && break; done
-
 fail=0
 pass() { echo "  PASS $1"; }
 bad()  { echo "  FAIL $1"; fail=1; }
+# 细纲须写了内容（不计 # 号和空白 ≥30 字）写正文守卫才放行；空文件会被当成空细纲拦下。
+write_outline() { printf '%s\n' '# 细纲' '江晨在雨夜推开旧书店的门，发现柜台后坐着失踪三年的师父，两人对视良久。' > "$1"; }
 
 deploy() { # $1 = project root
   mkdir -p "$1/.claude"
@@ -40,35 +41,33 @@ deploy() { # $1 = project root
 
 echo "Hook encoding portability test (issue #164)"
 echo "==========================================="
-echo "interpreter: $PYBIN"
 
-# ===== Part 1：python stdout cp936（PYTHONIOENCODING=gbk）=====
-echo "--- Part 1: python stdout cp936 simulation (PYTHONIOENCODING=gbk) ---"
+# Part 1a/1b/1c 共用的部署工程（1c 自建带追踪 state 的书目录）。
 P1="$WORK/p1"; deploy "$P1"
+
+# ===== Part 1a：默认区域下长篇/短篇相对路径（三平台都跑）=====
+# 短篇分支是纯 bash 判断中文路径（[ -f "$BOOK_DIR/设定.md" ]），与 #164/#184 同类；
+# Windows Git Bash 与 macOS bash 3.2 上只有这里会真跑它（部署检查 TS11 只在 ubuntu 跑）。
+echo "--- Part 1a: relative long/short paths in the default locale ---"
 mkdir -p "$P1/book/正文" "$P1/book/大纲" "$P1/book/追踪" "$P1/short"
-# 本节测的是编码/区域下的路径与 glob 行为，不是追踪门。落一份有效 state，让细纲门成为唯一
-# 变量；没有它，写第 1 章会先被 issue #305 起新增的追踪检查点拦下（state 缺失即拦）。
+# 落一份有效 state，让细纲门成为唯一变量（state 缺失会先被追踪检查点拦下）。
 printf '{"schema_version":4,"state_revision":0,"last_committed_chapter":0}\n' > "$P1/book/追踪/_tracking-state.json"
 printf '> 状态修订：0。\n' > "$P1/book/追踪/上下文.md"
-run_guard_py() { # $1 mode(default|gbk)  $2 file_path -> exit code
-  local mode="$1" fp="$2" ec=0
-  local -a pyenv=()
-  [ "$mode" = "gbk" ] && pyenv=(env PYTHONIOENCODING=gbk)
-  printf '{"tool_name":"Write","tool_input":{"file_path":"%s","content":"x"}}' "$fp" \
-    | CLAUDE_PROJECT_DIR="$P1" ${pyenv[@]+"${pyenv[@]}"} bash "$P1/.claude/hooks/guard-outline-before-prose.sh" \
-      >/dev/null 2>&1 || ec=$?
+run_guard_rel() { # $1 file_path -> exit code
+  local ec=0
+  printf '{"tool_name":"Write","tool_input":{"file_path":"%s","content":"x"}}' "$1" \
+    | CLAUDE_PROJECT_DIR="$P1" bash "$P1/.claude/hooks/guard-outline-before-prose.sh" >/dev/null 2>&1 || ec=$?
   printf '%s' "$ec"
 }
-for MODE in default gbk; do
-  rm -f "$P1/book/大纲/细纲_第1章.md"
-  [ "$(run_guard_py "$MODE" 'book/正文/第1章_开端.md')" = 2 ] && pass "[$MODE] long blocked, 细纲 missing" || bad "[$MODE] long should block when 细纲 missing"
-  : > "$P1/book/大纲/细纲_第1章.md"
-  [ "$(run_guard_py "$MODE" 'book/正文/第1章_开端.md')" = 0 ] && pass "[$MODE] long allowed, 细纲 present" || bad "[$MODE] long should allow when 细纲 present"
-  : > "$P1/short/设定.md"; rm -f "$P1/short/小节大纲.md"
-  [ "$(run_guard_py "$MODE" 'short/正文.md')" = 2 ] && pass "[$MODE] short blocked, 小节大纲 missing" || bad "[$MODE] short should block when 小节大纲 missing"
-  : > "$P1/short/小节大纲.md"
-  [ "$(run_guard_py "$MODE" 'short/正文.md')" = 0 ] && pass "[$MODE] short allowed, 小节大纲 present" || bad "[$MODE] short should allow when 小节大纲 present"
-done
+[ "$(run_guard_rel 'book/正文/第1章_开端.md')" = 2 ] && pass "long blocked, 细纲 missing" || bad "long should block when 细纲 missing"
+: > "$P1/book/大纲/细纲_第1章.md"
+[ "$(run_guard_rel 'book/正文/第1章_开端.md')" = 2 ] && pass "long blocked, 细纲 empty" || bad "long should block when 细纲 is empty"
+write_outline "$P1/book/大纲/细纲_第1章.md"
+[ "$(run_guard_rel 'book/正文/第1章_开端.md')" = 0 ] && pass "long allowed, 细纲 present" || bad "long should allow when 细纲 present"
+: > "$P1/short/设定.md"
+[ "$(run_guard_rel 'short/正文.md')" = 2 ] && pass "short blocked, 小节大纲 missing" || bad "short should block when 小节大纲 missing"
+: > "$P1/short/小节大纲.md"
+[ "$(run_guard_rel 'short/正文.md')" = 0 ] && pass "short allowed, 小节大纲 present" || bad "short should allow when 小节大纲 present"
 
 # ===== Part 1b：Windows 盘符绝对路径分类（issue #184，任何平台可跑）=====
 # Windows + Git Bash 下 Claude Code 传入盘符绝对路径（F:/... 或 F:\...）。旧 case 只认 /*，
@@ -79,7 +78,7 @@ done
 # 以 block(2) 证明盘符路径已按绝对路径处理。（真实 Windows 上同样的绝对处理会命中真盘符下的
 # 真细纲而放行，方向相反，此处只验「是否按绝对路径分类」这一修复点。）
 echo "--- Part 1b: Windows drive-letter absolute path classification (issue #184) ---"
-if mkdir -p "$P1/C:/book184/大纲" 2>/dev/null && : > "$P1/C:/book184/大纲/细纲_第2章.md" 2>/dev/null; then
+if mkdir -p "$P1/C:/book184/大纲" 2>/dev/null && write_outline "$P1/C:/book184/大纲/细纲_第2章.md" 2>/dev/null; then
   run_guard_drive() { # $1 file_path(JSON-escaped) -> exit code
     local ec=0
     printf '{"tool_name":"Write","tool_input":{"file_path":"%s","content":"x"}}' "$1" \
@@ -113,7 +112,7 @@ if command -v cygpath >/dev/null 2>&1; then
       printf '> 状态修订：0。\n' > "$P1/winbook/追踪/上下文.md"
       run_guard_win() { local ec=0; printf '{"tool_name":"Write","tool_input":{"file_path":"%s","content":"x"}}' "$1" \
         | CLAUDE_PROJECT_DIR="$P1" bash "$P1/.claude/hooks/guard-outline-before-prose.sh" >/dev/null 2>&1 || ec=$?; printf '%s' "$ec"; }
-      : > "$P1/winbook/大纲/细纲_第3章.md"
+      write_outline "$P1/winbook/大纲/细纲_第3章.md"
       [ "$(run_guard_win "$WINROOT/winbook/正文/第3章_x.md")" = 0 ] \
         && pass "[win] real drive path allowed when 细纲 present" \
         || bad  "[win] real drive path should allow when 细纲 present"
@@ -146,7 +145,7 @@ detect_gbk_locale() {
 }
 GBK_LOCALE="$(detect_gbk_locale || true)"
 if [ -z "$GBK_LOCALE" ]; then
-  echo "  SKIP: 系统无可用 zh_CN.GBK 类 locale（Part 1 已覆盖 python 那层；Part 2 需真实 GBK 区域）"
+  echo "  SKIP: 系统无可用 zh_CN.GBK 类 locale（Part 2 需真实 GBK 区域）"
 else
   echo "  using locale: $GBK_LOCALE"
   GBK() { LANG="$GBK_LOCALE" LC_ALL="$GBK_LOCALE" env "$@"; }
@@ -160,7 +159,7 @@ else
   rg() { local ec=0; printf '{"tool_name":"Write","tool_input":{"file_path":"%s","content":"x"}}' "$1" \
     | GBK CLAUDE_PROJECT_DIR="$P2" bash "$P2/.claude/hooks/guard-outline-before-prose.sh" >/dev/null 2>&1 || ec=$?; printf '%s' "$ec"; }
   [ "$(rg '让你管账号/正文/第1章_开端.md')" = 2 ] && pass "[GBK] guard blocks missing 细纲" || bad "[GBK] guard should block missing 细纲"
-  : > "$BOOK/大纲/细纲_第1章.md"
+  write_outline "$BOOK/大纲/细纲_第1章.md"
   # 细纲齐了还要追踪检查点成立才放行（issue #305 起 Claude 侧也有这道门）。先落一份有效
   # state，否则下面两条测的就不是中文 glob 而是追踪门。中文书名路径这里要经 node 传给共享核，
   # 顺带守住 GBK 区域下 node 侧按 UTF-8 收路径这条（bash 用 LC_ALL=C 走字节，node 与区域无关）。
@@ -168,6 +167,12 @@ else
   printf '> 状态修订：0。\n' > "$BOOK/追踪/上下文.md"
   [ "$(rg '让你管账号/正文/第1章_开端.md')" = 0 ] && pass "[GBK] guard allows present 细纲 (Chinese glob)" || bad "[GBK] guard should allow present 细纲 under GBK"
   [ "$(rg '让你管账号/正文/第001章_开端.md')" = 0 ] && pass "[GBK] guard tolerates zero-pad 第001章" || bad "[GBK] guard should tolerate 第001章 under GBK"
+  # 空细纲门是纯 bash 字节计数（LC_ALL=C 下删 UTF-8 续字节数码点）：GBK 区域下照样分得清
+  # 29 字（拦）与 30 字（放），不能因区域把中文字节数当字数。标题文字也算（`# 细纲` 计 2 字）。
+  printf '%s\n' '# 细纲' '他推门进屋看见师父坐在柜台后面他推门进屋看见师父坐在柜' > "$BOOK/大纲/细纲_第1章.md"
+  [ "$(rg '让你管账号/正文/第1章_开端.md')" = 2 ] && pass "[GBK] guard blocks 29-char (empty) 细纲" || bad "[GBK] guard should block a 29-char 细纲 under GBK"
+  printf '%s\n' '# 细纲' '他推门进屋看见师父坐在柜台后面他推门进屋看见师父坐在柜台' > "$BOOK/大纲/细纲_第1章.md"
+  [ "$(rg '让你管账号/正文/第1章_开端.md')" = 0 ] && pass "[GBK] guard allows 30-char 细纲" || bad "[GBK] guard should allow a 30-char 细纲 under GBK"
   # 追踪门本身在 GBK 区域下也要拦得住：中文书名经 node 解析 state，拦截文案含中文相对路径。
   mv "$BOOK/追踪/_tracking-state.json" "$BOOK/追踪/_state.bak"
   [ "$(rg '让你管账号/正文/第1章_开端.md')" = 2 ] && pass "[GBK] guard blocks missing tracking state (Chinese book path)" || bad "[GBK] guard should block missing tracking state under GBK"
@@ -215,7 +220,7 @@ fi
 
 echo ""
 if [ "$fail" -eq 0 ]; then
-  echo "PASS: hook 在 cp936 与真实 GBK 区域下都正确"
+  echo "PASS: hook 在盘符路径与真实 GBK 区域下都正确"
 else
   echo "FAIL: hook 在某个编码/区域模式下行为不符（中文编码回归）"
 fi

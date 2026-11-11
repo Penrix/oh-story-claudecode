@@ -11,10 +11,19 @@
 #   bash scripts/test-charcount-portable.sh           # 用真实解释器
 #   bash scripts/test-charcount-portable.sh --stub     # 模拟 Store 占位程序(exit 49)
 #
-# 注意：下面 PROBE/COUNT 两行必须与技能文档里的命令逐字一致（story-short-write、
-# story-long-write、narrative-writer、style-profile-generator）。check-python-invocation.sh
+# 命令直接从 story-short-write/references/short-format.md「字数统计」节的第一个 bash 块
+# （探测解释器 + 逐节统计；0.10 起整篇字数只认交付检查，文档只留逐节命令）
+# 抽取执行，不手抄：文档改了命令，本测试跑的就是新命令。check-python-invocation.sh
 # 守卫文档不回退成裸 python3；本脚本守卫这条命令真的能跑出正确结果。
 set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+DOC="$REPO_ROOT/skills/story-short-write/references/short-format.md"
+COUNT_BLOCK="$(awk '/^## 字数统计/{s=1;next} s&&/^```bash$/{b=1;next} b&&/^```$/{exit} b' "$DOC")"
+case "$COUNT_BLOCK" in
+  *PYBIN*) ;;
+  *) echo "FAIL: 未能从 $DOC 的「字数统计」节抽到探测 + 统计命令" >&2; exit 1 ;;
+esac
 
 STUB=0
 [ "${1:-}" = "--stub" ] && STUB=1
@@ -25,9 +34,9 @@ trap 'rm -rf "$WORK"' EXIT
 # 中文目录 + 中文文件名，复现 issue #121 的路径场景
 BOOK_DIR="$WORK/小说项目/第一卷"
 mkdir -p "$BOOK_DIR"
-# 12 个码位：中文字数测试(6) + ABC(3) + 123(3)，无结尾换行
-printf '%s' '中文字数测试ABC123' > "$BOOK_DIR/正文.md"
-EXPECT=12
+# 两节：「中文字数测试」6 个码位，「ABC 123」去掉空白后 6 个码位；无结尾换行
+printf '%s' $'###1.\n中文字数测试\n###2.\nABC 123' > "$BOOK_DIR/正文.md"
+EXPECT=$'###1. 6\n###2. 6'
 
 # 先记住一个真正可用的解释器。stub 必须自给自足，不假设当前机器
 # 同时安装了 python3 和 python/py（某些 macOS 环境只有 python3）。
@@ -53,14 +62,16 @@ if [ "$STUB" -eq 1 ]; then
   echo "[stub] python3 现在固定 exit 49（模拟 Microsoft Store 占位程序）"
 fi
 
-# === 与技能文档逐字一致的探测 + 统计命令 ===
-# 用相对路径统计（先 cd 进书目录，再传文件名）——这正是技能里模型的用法：
+# 在书目录里原样执行文档命令（相对路径 正文.md）——这正是技能里模型的用法：
 # 先 cd 到项目/正文目录再用相对路径。Windows Git Bash 下若把绝对 POSIX 路径
 # （/tmp/...、/c/...）直接喂给原生 Windows python，会被解析成 C:\tmp\... 而找不到文件；
-# 相对路径按子进程真实 cwd 解析，三平台一致。
-for PYBIN in python3 python py; do "$PYBIN" -c "" 2>/dev/null && break; done
-GOT="$(cd "$BOOK_DIR" && "$PYBIN" -c "from pathlib import Path; print(len(Path('正文.md').read_text(encoding='utf-8')))")"
-# === 命令结束 ===
+# 相对路径按子进程真实 cwd 解析，三平台一致。末行回报命令选中的解释器，供 stub 断言。
+run_count() {
+  OUT="$(cd "$BOOK_DIR" && eval "$COUNT_BLOCK"; printf '\n__PYBIN=%s\n' "${PYBIN:-}")"
+  PYBIN="$(printf '%s\n' "$OUT" | sed -n 's/^__PYBIN=//p')"
+  GOT="$(printf '%s\n' "$OUT" | tr -d '\r' | sed '/^__PYBIN=/d;/^$/d')"
+}
+run_count
 
 echo "selected interpreter: $PYBIN"
 echo "char count: $GOT (expect $EXPECT)"
@@ -68,6 +79,16 @@ echo "char count: $GOT (expect $EXPECT)"
 fail=0
 if [ "$GOT" != "$EXPECT" ]; then
   echo "FAIL: 字符数不符（中文路径或解释器问题）"
+  fail=1
+fi
+
+# 第一个小节标记前的导语也要单独报一行
+printf '%s' $'开头导语\n###1.\n中文字数测试\n###2.\nABC 123' > "$BOOK_DIR/正文.md"
+EXPECT=$'导语 4\n###1. 6\n###2. 6'
+run_count
+echo "lead count: $GOT (expect $EXPECT)"
+if [ "$GOT" != "$EXPECT" ]; then
+  echo "FAIL: 导语字数没有报出"
   fail=1
 fi
 if [ "$STUB" -eq 1 ] && [ "$PYBIN" = "python3" ]; then

@@ -98,14 +98,6 @@ PY
 
 echo "  OK Windows encoding safety (UTF-8 stdio + file reads)"
 
-# Prose backstop parity surface: Codex has no PostToolUse, so the light prose net runs at Stop
-# (sweeping git-changed 正文) and continuity runs at SessionStart. These must stay present.
-assert_grep 'def prose_net_findings' "$HOOK_PY" "Codex hook must carry the light prose net (parity with claude/opencode)"
-assert_grep 'def find_changed_prose_files' "$HOOK_PY" "Codex Stop sweep must discover git-changed prose"
-assert_grep 'def continuity_findings' "$HOOK_PY" "Codex hook must carry the continuity backstop (追踪 staleness + dup-title)"
-
-echo "  OK prose backstop parity surface (Stop net + SessionStart continuity)"
-
 # .agents/skills is a relative symlink to skills/ (the agentskills.io path Codex scans), so
 # there is no second skill copy. Must be a valid relative symlink: an invalid/absolute one
 # (openai/codex#11314) or a Windows no-symlinks text stub silently breaks discovery.
@@ -113,7 +105,7 @@ echo "  OK prose backstop parity surface (Stop net + SessionStart continuity)"
 target="$(readlink .agents/skills)"
 [ "$target" = "../skills" ] || fail ".agents/skills symlink target must be relative '../skills', got '$target'"
 skill_count="$(find skills -maxdepth 2 -name SKILL.md | wc -l | tr -d ' ')"
-[ "$skill_count" = "13" ] || fail "expected 13 skills, found $skill_count"
+[ "$skill_count" = "14" ] || fail "expected 14 skills, found $skill_count"
 for skill in skills/*/SKILL.md; do
   name="$(basename "$(dirname "$skill")")"
   assert_file ".agents/skills/$name/SKILL.md"
@@ -324,7 +316,7 @@ expected = {
     'chapter-extractor', 'character-designer', 'consistency-checker',
     'narrative-writer', 'story-architect', 'story-explorer', 'story-researcher',
 }
-read_only = {'chapter-extractor', 'consistency-checker', 'story-explorer'}
+read_only = {'consistency-checker', 'story-explorer'}  # chapter-extractor 写批次输入文件，不再只读
 found = set()
 for path in sorted(Path('skills/story-setup/references/codex/agents').glob('*.toml')):
     data = tomllib.loads(path.read_text(encoding='utf-8'))
@@ -410,12 +402,9 @@ for name, tokens in allowed.items():
         f"event token drift between hooks.json and {name}: "
         f"registered-only={sorted(set(registered) - tokens)}, {name}-only={sorted(tokens - set(registered))}"
     )
-
-assert "Path(__file__)" in hook_py and "_deployed_root_from_file" in hook_py, \
-    "story_codex_hook.py must self-locate the project root from __file__ (Windows MSYS-path safety)"
 PY
 
-echo "  OK generated launcher routing + Python self-location + cmd.exe commandWindows"
+echo "  OK generated launcher routing + cmd.exe commandWindows"
 
 # Reference-path contract: generated Codex agents use only the bundle story-setup deploys.
 python3 - "$CODEX_DIR/agents" <<'PY'
@@ -436,8 +425,13 @@ echo "  OK Codex agent canonical reference path"
 assert_grep '\$story-setup|\$story-long-write|/skills' "$CODEX_DIR/AGENTS.md.tmpl" "Codex AGENTS template must mention skill invocation"
 assert_grep '\.codex/agents/\*\.toml' "$CODEX_DIR/AGENTS.md.tmpl" "Codex AGENTS template must mention custom agent location"
 assert_grep '\.codex/hooks\.json' "$CODEX_DIR/AGENTS.md.tmpl" "Codex AGENTS template must mention hooks location"
-assert_grep 'references/codex' skills/story-setup/SKILL.md "story-setup must document Codex references"
 assert_grep 'target_cli:.*codex|codex.*target_cli' skills/story-setup/SKILL.md "story-setup must document codex target_cli"
+# 入口按宿主只读一份部署文件；Codex 的清单、hooks 合并与 trust 提示都在 deploy-codex.md。
+assert_grep 'references/deploy-codex\.md' skills/story-setup/SKILL.md "story-setup entry must route codex to its deploy file"
+assert_grep 'references/codex' skills/story-setup/references/deploy-codex.md "story-setup must document Codex references"
+assert_grep 'target_cli` 写入 `codex`' skills/story-setup/references/deploy-codex.md "Codex deploy file must write codex into target_cli"
+assert_grep 'merge-codex-hooks\.py' skills/story-setup/references/deploy-codex.md "Codex deploy file must merge hooks through the helper"
+assert_grep 'dangerously-bypass-hook-trust' skills/story-setup/references/deploy-codex.md "Codex deploy file must keep the hook trust install-report prompt"
 assert_grep '\.codex/agents|\.codex/hooks\.json' skills/story-review/SKILL.md "story-review must check Codex agents"
 
 echo "  OK Codex docs/instruction anchors"

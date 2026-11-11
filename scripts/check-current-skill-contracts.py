@@ -25,9 +25,9 @@ EXPECTED_MANIFEST_KEYS = {
     "agents_version",
     "topic_decision_phase",
     "progress_schema_version",
-    "expected_demo_outline_count",
     "primary_benchmark_artifacts",
     "required_outline_sections",
+    "template_fences",
 }
 SEMVER_RE = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 ARTIFACT_PATH_RE = re.compile(r"(?:[^/\s]+/)+[^/\s]+\.md")
@@ -42,7 +42,9 @@ class ContractManifest:
     progress_schema_version: int
     primary_benchmark_artifacts: Tuple[str, ...]
     required_outline_sections: Tuple[Tuple[str, str], ...]
-    expected_demo_outline_count: int
+    # 参考文件里带标签的模板围栏（```markdown template=细纲）：标签名的唯一清单，
+    # 运行时脚本按名取模板，check-reference-routing.py 核对每个标签恰好出现一次。
+    template_fences: Tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -126,7 +128,8 @@ LEGACY_RULES = (
         "duplicate-adapter-reference-fallback",
         "story-setup deploys one canonical reference path per adapter",
         r"同步复制到\s*`skills/[^`]+`\s*作为 fallback",
-        ("skills/story-setup/SKILL.md",),
+        # 入口只留通用流程，各宿主的复制步骤在 references/deploy-*.md，两处都要扫。
+        ("skills/story-setup/SKILL.md", "skills/story-setup/references"),
     ),
     AbsentRule(
         "opencode-old-reference-prefix",
@@ -231,6 +234,7 @@ LEGACY_RULES = (
         r"(?:优先探|回退探)[^\n]{0,60}\{书名\}/文风\.md|"
         r"Glob\s*`?(?:对标|拆文库)/\*/文风\.md",
         (
+            "skills/story-setup/references/agent-references/benchmark-style-load.md",
             "skills/story-setup/references/templates/agents/story-explorer.md",
             "skills/story-setup/references/opencode/agents/story-explorer.md",
             "skills/story-setup/references/codex/agents/story-explorer.toml",
@@ -242,7 +246,9 @@ LEGACY_RULES = (
         "outline beats never use numeric totals or sigma bands to predict prose capacity",
         r"预算合计|目标字数合计|Σ∈\[章目标",
         (
-            "skills/story-long-write/references/workflow-setup.md",
+            "skills/story-long-write/references/workflow-volume.md",
+            "skills/story-long-write/references/workflow-outline.md",
+            "skills/story-long-write/references/outline-template.md",
             "skills/story-long-write/references/artifact-protocols.md",
             "skills/story-setup/references/templates/rules/story-outline.md",
             "skills/story-setup/references/templates/agents/story-architect.md",
@@ -267,8 +273,7 @@ SPAWN_CAPABLE_SKILLS = (
 
 # 细纲结构容量的 canonical 副本与消费方：逐点只写语义义务，不填数字配额。
 OUTLINE_SEMANTIC_CAPACITY_CONSUMERS = (
-    "skills/story-long-write/references/workflow-setup.md",
-    "skills/story-long-write/references/artifact-protocols.md",
+    "skills/story-long-write/references/outline-template.md",
     "skills/story-setup/references/templates/rules/story-outline.md",
 )
 
@@ -361,7 +366,6 @@ def load_manifest(path: Path) -> Tuple[Optional[ContractManifest], List[Finding]
         "agents_version",
         "topic_decision_phase",
         "progress_schema_version",
-        "expected_demo_outline_count",
     ):
         if key not in raw:
             continue
@@ -414,11 +418,27 @@ def load_manifest(path: Path) -> Tuple[Optional[ContractManifest], List[Finding]
             )
         )
 
+    fences = raw.get("template_fences")
+    if not isinstance(fences, list) or not fences or any(
+        not isinstance(item, str) or not item.strip() or any(ch.isspace() for ch in item)
+        for item in fences
+    ):
+        findings.append(
+            Finding(
+                "manifest-template-fences",
+                "template_fences must be a non-empty array of tag names without whitespace",
+                path,
+            )
+        )
+    elif len(set(fences)) != len(fences):
+        findings.append(Finding("manifest-template-fences", "template_fences must be unique", path))
+
     if findings:
         return None, findings
 
     assert isinstance(artifacts, list)
     assert isinstance(sections, list)
+    assert isinstance(fences, list)
     manifest = ContractManifest(
         manifest_version=raw["manifest_version"],
         setup_skill_version=raw["setup_skill_version"],
@@ -427,7 +447,7 @@ def load_manifest(path: Path) -> Tuple[Optional[ContractManifest], List[Finding]
         progress_schema_version=raw["progress_schema_version"],
         primary_benchmark_artifacts=tuple(artifacts),
         required_outline_sections=tuple((item["rule"], item["demo"]) for item in sections),
-        expected_demo_outline_count=raw["expected_demo_outline_count"],
+        template_fences=tuple(fences),
     )
     return manifest, []
 
@@ -694,6 +714,107 @@ def require_pattern(path: Path, pattern: str, code: str, message: str) -> List[F
     return [Finding(code, message, path)]
 
 
+# 拆文写给作者的模板（对话回复、快速预览、拆文报告）里不得出现工程痕迹：作者看不懂
+# 字段名、批次号、脚本名和内部指标，真实运行里它们会被模型照抄进汇报。
+AUTHOR_FACING_FORBIDDEN = (
+    (r"\b(?:classification|recommended_path|stage_repairs|final_state|direct_use|current_complete|legacy_complete|batches)\b",
+     "runtime field or status name"),
+    (r"[A-Za-z]+_[A-Za-z0-9_]+", "snake_case identifier"),
+    (r"(?:RAW|REUSE)-(?:\d|\{)", "batch id"),
+    (r"\.py\b|(?<![\w-])--[a-z]", "script name or command flag"),
+    (r"\b(?:Stage|Phase)\s*\d", "internal stage number"),
+    (r"置信度|覆盖率|重叠率|三维", "internal metric wording"),
+    (r"(?<![A-Za-z])[ABC]\s*级", "evidence grade letter"),
+    (r"(?<![（(A-Za-z0-9])(?:EM|REL|EV|RV|AX)-(?:\d|\*|x|\{)", "internal id without a human label"),
+    (r"_progress|_analysis_cache|sha256|\bhash\b|(?i:json)", "internal file or data format"),
+)
+FENCE_RE = re.compile(r"^(`{3,})[^\n]*\n(.*?)^\1\s*$", re.MULTILINE | re.DOTALL)
+
+
+# 拆文按时刻加载：入口的「按时刻读」表是每个时刻读哪几份文件的唯一路由。某个阶段文件从表里
+# 掉出去，那个时刻就只能靠模型猜着整读旧的大文件，35K 的时刻上限随之失效。
+ANALYZE_MOMENT_ROUTES = (
+    (
+        "skills/story-long-analyze/SKILL.md",
+        "## 按时刻读",
+        (
+            "stage1-golden-chapters.md", "index-rebuild.md", "pipeline-ops.md", "stage2-extraction.md",
+            "synthesis-inputs.md", "stage3-plot-rhythm.md", "stage4-characters-settings.md",
+            "stage5-report.md", "style-profile-generator.md", "final-checks.md",
+        ),
+    ),
+    (
+        "skills/story-short-analyze/SKILL.md",
+        "### 按时刻读",
+        (
+            "output-contract.md", "analysis-method.md", "stage2-3-structure-emotion.md",
+            "stage4-6-reversal-summary.md", "quality-checklist.md", "analysis-report-style.md",
+        ),
+    ),
+)
+
+
+def analyze_moment_routing_findings(repo_root: Path) -> List[Finding]:
+    findings: List[Finding] = []
+    for relative, heading, files in ANALYZE_MOMENT_ROUTES:
+        path = repo_root / relative
+        text = read_text(path)
+        if text is None or heading not in text:
+            findings.append(Finding("analyze-moment-routing", "missing moment routing table {!r}".format(heading), path))
+            continue
+        level = heading.split(" ", 1)[0]
+        section = text.split(heading, 1)[1]
+        section = re.split(r"^#{{1,{}}} ".format(len(level)), section, maxsplit=1, flags=re.MULTILINE)[0]
+        for name in files:
+            if "(references/{})".format(name) not in section:
+                findings.append(Finding(
+                    "analyze-moment-routing",
+                    "moment routing table must link references/{}".format(name),
+                    path,
+                ))
+    return findings
+
+
+def analyze_dispatch_default_findings(path: Path) -> List[Finding]:
+    """开头三章拆完停下来问时，派发方式替作者定好，不把工程选择丢给作者。"""
+    text = read_text(path)
+    if text is None:
+        return [Finding("analyze-dispatch-default", "cannot read author-facing templates", path)]
+    match = re.search(r"^### 开头三章拆完、停下来问\n(.*?)(?=^### )", text, re.MULTILINE | re.DOTALL)
+    if match is None:
+        return [Finding("analyze-dispatch-default", "missing the stop-after-opening template", path)]
+    if re.search(r"想怎么拆|^\d+\.\s", match.group(1), re.MULTILINE):
+        return [Finding(
+            "analyze-dispatch-default",
+            "stop-after-opening must default the dispatch mode instead of asking the author to pick one",
+            path,
+        )]
+    return []
+
+
+def author_facing_findings(path: Path) -> List[Finding]:
+    """Every fenced block in the author-facing reference is text the author reads verbatim."""
+    text = read_text(path)
+    if text is None:
+        return [Finding("author-facing-template-missing", "cannot read author-facing templates", path)]
+    findings: List[Finding] = []
+    blocks = list(FENCE_RE.finditer(text))
+    if not blocks:
+        return [Finding("author-facing-template-missing", "author-facing reference has no template blocks", path)]
+    for block in blocks:
+        start_line = text.count("\n", 0, block.start(2)) + 1
+        for offset, line in enumerate(block.group(2).splitlines()):
+            for pattern, label in AUTHOR_FACING_FORBIDDEN:
+                match = re.search(pattern, line)
+                if match:
+                    findings.append(Finding(
+                        "author-facing-engineering-token",
+                        "author-facing template contains {}: {!r}".format(label, match.group(0)),
+                        path, start_line + offset, line.strip(),
+                    ))
+    return findings
+
+
 def spawn_preflight_findings(
     text: str, manifest: ContractManifest, path: Path
 ) -> List[Finding]:
@@ -701,18 +822,27 @@ def spawn_preflight_findings(
 
     版本不匹配只提示、不阻断：bump 的原因常常是别的部署物变了而 agent 模板根本没动
     （v23 就只改了 story-explorer），硬闸会让所有人为无关变更付并行代价。真正该降级的
-    信号是 agent 文件缺失或运行时不暴露 custom agent。
+    信号是当前宿主角色缺失或运行时不暴露调用能力；插件角色不要求项目文件。
     """
 
     current = str(manifest.agents_version)
+    fallback_pattern = r"只有当前宿主角色缺失或不暴露调用能力时才降级 solo/direct"
+    if path.as_posix().endswith("skills/story-review/SKILL.md"):
+        fallback_pattern = (
+            r"版本提示本身不触发降级；文件缺失或异常、工具不可用、递归限制或调用失败按 Phase 0 处理"
+        )
+    # 长短篇写作 0.10 起汇报不带技术备注行：版本不匹配只对作者说一句白话。
+    notice_pattern = r"Notice: agents bundle 版本不匹配"
+    if path.as_posix().endswith(("skills/story-long-write/SKILL.md", "skills/story-short-write/SKILL.md")):
+        notice_pattern = r"写作助手是旧版，运行 /story-setup"
     required = (
         (r"`agents_version:\s*{}`".format(current), "pin the current agents_version"),
         (
-            r"照常按文件存在性检查并 spawn",
+            r"照常按当前宿主角色来源检查并 spawn",
             "state that a version mismatch does not block spawn",
         ),
         (
-            r"Notice: agents bundle 版本不匹配",
+            notice_pattern,
             "surface the version mismatch notice",
         ),
         (
@@ -720,8 +850,8 @@ def spawn_preflight_findings(
             "tell future deployments to update the package first",
         ),
         (
-            r"只有 agent 文件缺失、或运行时不暴露 custom agent 时才降级 solo/direct",
-            "reserve the solo/direct fallback for genuinely missing agents",
+            fallback_pattern,
+            "describe operational fallbacks without treating version mismatch as a failure",
         ),
     )
     missing = [label for pattern, label in required if re.search(pattern, text) is None]
@@ -736,6 +866,45 @@ def spawn_preflight_findings(
             path,
         )
     ]
+
+
+# 作者可见文本只说白话：这些 Skill 的降级与版本提示原文只进汇报最后一行「技术备注：」，
+# 不再写成「报告 `Fallback: …`」「同时报告 `Notice: …`」让模型原样念给作者（v0.8.2）。
+# 长短篇写作 0.10 起不再有技术备注行（版本提示、降级都说成一句白话），不在此列。
+AUTHOR_NOTE_PREFLIGHT_SKILLS = (
+    "skills/story-deslop/SKILL.md",
+    "skills/story-review/SKILL.md",
+    "skills/story-import/SKILL.md",
+    "skills/story/SKILL.md",
+)
+BARE_ENGINE_REPORT_RE = re.compile(r"报告\s*`(?:Fallback|Notice):")
+ENGINE_LINE_RE = re.compile(r"(?:Fallback|Notice):")
+SENTENCE_SPLIT_RE = re.compile(r"[。；！？\n]")
+
+
+def author_note_preflight_findings(text: str, path: Path) -> List[Finding]:
+    """Fallback / Notice 原文必须改走技术备注行，给作者的是一句白话。
+
+    只认「同一句话里写明进技术备注」：换个动词（报、说出、报告：）绕开固定句式都拦得住。"""
+
+    problems = []
+    if BARE_ENGINE_REPORT_RE.search(text):
+        problems.append("Fallback/Notice must not be reported to the author verbatim")
+    stray = [
+        sentence.strip()
+        for sentence in SENTENCE_SPLIT_RE.split(text)
+        if ENGINE_LINE_RE.search(sentence) and "技术备注" not in sentence
+    ]
+    if stray:
+        problems.append(
+            "every Fallback:/Notice: mention must say in the same sentence that it goes into the 技术备注 line: "
+            + " | ".join(item[:60] for item in stray)
+        )
+    if "技术备注" not in text:
+        problems.append("route Fallback/Notice into the trailing 技术备注 line")
+    if not problems:
+        return []
+    return [Finding("author-note-preflight", "; ".join(problems), path)]
 
 
 def rubric_dimension_names(repo_root: Path) -> Tuple[List[str], List[str]]:
@@ -1133,7 +1302,6 @@ def validate_repository(repo_root: Path, manifest: ContractManifest) -> List[Fin
     findings.extend(
         progress_schema_pin_findings(repo_root, manifest.progress_schema_version)
     )
-    findings.extend(require_pattern(pipeline, r"章节边界", "chapter-boundary-table", "progress must keep the canonical chapter-boundary table"))
 
     setup_skill = repo_root / "skills/story-setup/SKILL.md"
     actual_setup_version = parse_frontmatter_version(setup_skill)
@@ -1158,6 +1326,10 @@ def validate_repository(repo_root: Path, manifest: ContractManifest) -> List[Fin
             )
         )
 
+    for relative in AUTHOR_NOTE_PREFLIGHT_SKILLS:
+        note_skill = repo_root / relative
+        findings.extend(author_note_preflight_findings(read_text(note_skill) or "", note_skill))
+
     upgrading = repo_root / "skills/story-setup/UPGRADING.md"
     upgrading_text = read_text(upgrading) or ""
     findings.extend(upgrading_version_findings(upgrading_text, manifest, upgrading))
@@ -1176,10 +1348,15 @@ def validate_repository(repo_root: Path, manifest: ContractManifest) -> List[Fin
                 topic_file,
             )
         )
-    # Penrix fork: story-long-scan is a market-prefiltered Case collector.
-    # The legacy topic-decision reference remains version-checked for downstream
-    # consumers, but the scan skill itself must not expose a topic-decision phase:
-    # collecting title + full introduction is intentionally separated from analysis.
+    scan_skill = repo_root / "skills/story-long-scan/SKILL.md"
+    findings.extend(
+        require_pattern(
+            scan_skill,
+            r"^#{{2,6}}\s+Phase\s+{}[：:]\s*选题决策\s*$".format(manifest.topic_decision_phase),
+            "topic-decision-phase-heading",
+            "story-long-scan must expose topic decision as Phase {}".format(manifest.topic_decision_phase),
+        )
+    )
     for path in iter_files(repo_root / "skills"):
         if path.suffix.lower() != ".md":
             continue
@@ -1209,17 +1386,23 @@ def validate_repository(repo_root: Path, manifest: ContractManifest) -> List[Fin
 
     findings.extend(rubric_parity_findings(repo_root))
 
+    findings.extend(author_facing_findings(repo_root / "skills/story-long-analyze/references/author-facing.md"))
+    findings.extend(analyze_dispatch_default_findings(repo_root / "skills/story-long-analyze/references/author-facing.md"))
+    findings.extend(analyze_moment_routing_findings(repo_root))
     long_analyze = repo_root / "skills/story-long-analyze/SKILL.md"
+    findings.extend(require_pattern(long_analyze, r"references/author-facing\.md", "author-facing-routed",
+                                    "story-long-analyze must route every author-visible message through author-facing.md"))
     findings.extend(require_pattern(long_analyze, r"invalid_topic_decision_contract", "invalid-topic-contract", "invalid topic-decision artifacts must fail explicitly"))
-    # 章节边界表是 Stage 1/2/6 的唯一切片真值：原文开头的目录块会让每个章号命中两次，
-    # 不剔就一路错到底。剔除步骤和落表前的连续性校验都必须留在 Stage 0。
-    findings.extend(require_pattern(long_analyze, r"先剔掉目录块", "stage0-toc-block-removal", "Stage 0 must drop the leading table-of-contents block before building the chapter table"))
+    # 目录块剔除由 build_chapter_index.py 执行，test-long-analyze-runtime-refactor.py 用带目录原文覆盖；
+    # 章号连续性校验目前没有运行时回归，暂留 Stage 0 的文字锚点。
     findings.extend(require_pattern(long_analyze, r"落表前校验章号连续", "stage0-chapter-table-validation", "Stage 0 must validate chapter numbers before writing the boundary table"))
-    explorer = repo_root / "skills/story-setup/references/templates/agents/story-explorer.md"
+    # 对标召回流程在 story-explorer 的按需参考里（query_type=benchmark_style_load 才读）。
+    explorer = repo_root / "skills/story-setup/references/agent-references/benchmark-style-load.md"
     findings.extend(require_pattern(explorer, r"missing_primary_contract", "explorer-primary-failure", "story-explorer must fail closed on missing current benchmark artifacts"))
     findings.extend(require_pattern(explorer, r"repair_action", "explorer-repair-action", "story-explorer must return an explicit repair action"))
 
-    long_write = repo_root / "skills/story-long-write/SKILL.md"
+    # 主产物的读取与缺失即停在写前召回里定义（v0.8.2 起 SKILL.md 只留对标路径查找一行）。
+    long_write = repo_root / "skills/story-long-write/references/benchmark-recall.md"
     for artifact in manifest.primary_benchmark_artifacts:
         findings.extend(
             require_pattern(
@@ -1259,7 +1442,6 @@ def validate_repository(repo_root: Path, manifest: ContractManifest) -> List[Fin
         "skills/story-long-write/references/workflow-setup.md",
         "skills/story-short-write/references/benchmark-recall.md",
         "skills/story-long-write/references/cross-book-recall.md",
-        "skills/story-short-write/references/cross-book-recall.md",
     ):
         benchmark_discovery = repo_root / relative
         findings.extend(
@@ -1271,7 +1453,7 @@ def validate_repository(repo_root: Path, manifest: ContractManifest) -> List[Fin
             )
         )
 
-    explorer_template = repo_root / "skills/story-setup/references/templates/agents/story-explorer.md"
+    explorer_template = repo_root / "skills/story-setup/references/agent-references/benchmark-style-load.md"
     findings.extend(
         require_pattern(
             explorer_template,
@@ -1300,12 +1482,34 @@ def validate_repository(repo_root: Path, manifest: ContractManifest) -> List[Fin
     )
     findings.extend(
         require_pattern(
-            repo_root / "skills/story-long-write/references/workflow-daily.md",
+            repo_root / "skills/story-long-write/references/benchmark-recall.md",
             r"profile_missing[^\n]{0,60}custom_style[^\n]{0,40}继续",
             "daily-profile-missing-custom-style",
-            "workflow-daily must keep the profile_missing + custom_style continuation branch",
+            "the story-explorer recall gaps (benchmark-recall.md) must keep the profile_missing + custom_style continuation branch",
         )
     )
+
+    # 三层灵感库管道：复用 EM 卡、裸 ID 引用、可选轴不阻塞——三条红线各有一个可机检锚点。
+    inspiration_library = repo_root / "skills/story-long-analyze/references/inspiration-library.md"
+    for pattern, code, message in (
+        (r"原子灵感", "inspiration-atom-layer", "inspiration library must define the atom layer"),
+        (r"单小说灵感合并", "inspiration-novel-merge-layer", "inspiration library must define the single-novel merge layer"),
+        (r"跨书灵感聚合", "inspiration-cross-book-layer", "inspiration library must define the cross-book aggregation layer"),
+        (r"只是索引行，没有文件", "inspiration-atom-is-index-row", "inspiration atoms must stay index rows without card files"),
+        (r"禁止在卡里堆路径链接|卡内无路径引用", "inspiration-no-path-in-card", "NM/CBA cards must reference sources by bare id, not paths"),
+        (r"单书拆文不自动入库", "inspiration-no-auto-ingest", "single-book analysis must not auto-ingest into the library"),
+    ):
+        findings.extend(require_pattern(inspiration_library, pattern, code, message))
+    findings.extend(
+        require_pattern(
+            repo_root / "skills/story-long-analyze/SKILL.md",
+            r"references/inspiration-library\.md",
+            "inspiration-pipeline-routed",
+            "story-long-analyze must route the optional inspiration pipeline",
+        )
+    )
+    # 0.10：长篇写作删掉了灵感库召回（设定、卷纲、细纲与跨书召回都不再查灵感库），
+    # 灵感库本身仍由 story-long-analyze 维护，上面的管道锚点保留。
 
     # 三处消费方都必须明确取消逐点字数，避免旧 Σ 契约从任一部署面回流。
     for relative in OUTLINE_SEMANTIC_CAPACITY_CONSUMERS:
@@ -1338,16 +1542,9 @@ def validate_repository(repo_root: Path, manifest: ContractManifest) -> List[Fin
 
     outline_dir = repo_root / "demo/长篇/让你管账号，你高燃混剪炸全网/大纲"
     outlines = sorted(outline_dir.glob("细纲_第*.md"))
-    if len(outlines) != manifest.expected_demo_outline_count:
-        findings.append(
-            Finding(
-                "demo-outline-count",
-                "expected {} demo chapter outlines, found {}".format(
-                    manifest.expected_demo_outline_count, len(outlines)
-                ),
-                outline_dir,
-            )
-        )
+    if not outlines:
+        # 目录改名或清空时下面的逐章检查会空转，至少要有一份细纲。
+        findings.append(Finding("demo-outline-section", "no demo chapter outlines found", outline_dir))
     for outline in outlines:
         text = read_text(outline) or ""
         declared_fields = extract_demo_outline_fields(text)
@@ -1423,7 +1620,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     print("  [PASS] legacy/path guards")
     print("  [PASS] version, phase, progress, and artifact contracts")
     print("  [PASS] primary-artifact fallback semantics")
-    print("  [PASS] demo primary artifacts and {} outlines".format(manifest.expected_demo_outline_count))
+    print("  [PASS] demo primary artifacts and outlines")
     print("\nResult: all current-contract checks passed")
     return 0
 

@@ -1,30 +1,225 @@
-[English](README_EN.md) | **中文**
+<p align="center">
+  <img src="https://raw.githubusercontent.com/zenstory-ai/zenstory/main/apps/web/public/brand/zenstory-ai-mark.svg" alt="" width="76" height="76">
+</p>
 
-# oh-story-claudecode
+<h1 align="center">Oh Story</h1>
 
-> 项目页：<https://zenstory.ai/oh-story> · ZenStory AI 全部项目：<https://zenstory.ai/projects> · 术语表：<https://zenstory.ai/glossary>
+<p align="center">
+  <b>网文写作 skill 包：扫榜、拆文、写作、去AI味、封面图一套流程，装进你正在用的编程 Agent。</b>
+</p>
 
-网文写作 skill 包，覆盖长篇与短篇网络小说的扫榜、拆文、写作、去AI味、封面图全流程。内置适配 Claude Code、Google Antigravity、OpenCode、ZCode、OpenClaw、Codex CLI、Reasonix；能读取项目文件的 Web AI / Agent 环境也可按通用 skills 路径使用。
+<p align="center">
+  <a href="https://zenstory.ai/zh/oh-story"><b>项目主页</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://app.zenstory.ai/?utm_source=gh-oh-story&utm_medium=readme"><b>在线写作工作台</b></a>
+  &nbsp;·&nbsp;
+  <a href="#安装"><b>安装</b></a>
+  &nbsp;·&nbsp;
+  <a href="#常见问题"><b>常见问题</b></a>
+  &nbsp;·&nbsp;
+  <a href="README_EN.md"><b>English</b></a>
+</p>
 
-**Oh Story** is an open-source skill pack that turns coding agents — Claude Code, Codex CLI, Google Antigravity, OpenCode, ZCode, OpenClaw and Reasonix — into a complete workflow for writing Chinese web fiction (网文), both long-form serials and short stories. It covers the professional author's method end to end: **扫榜** (scanning bestseller charts to choose genre, cast and angle), **拆文** (deconstructing top-ranked works into outline rhythm and reusable plot modules), commercial drafting with hooks and payoff pacing, **去AI味** (removing AI-flavored prose), and cover generation. It is not a prompt collection: the 13 skills ship with deterministic verifiers, blocking reference gates, layered context and state management, and per-harness deployers (`/story-setup`). Built for authors publishing on 起点, 番茄, 晋江, 七猫 and 知乎盐言. MIT licensed. Full English README: [README_EN.md](README_EN.md). Install: `npx skills add zenstory-ai/oh-story-claudecode -y -g`.
+<p align="center">
+  <a href="https://github.com/zenstory-ai/oh-story-claudecode/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/zenstory-ai/oh-story-claudecode?style=flat-square&color=22D3EE&logo=github&logoColor=white&label=Stars"></a>
+  <a href="https://github.com/zenstory-ai/oh-story-claudecode/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/zenstory-ai/oh-story-claudecode?style=flat-square&color=081431&label=Release"></a>
+  <img alt="Skills 14" src="https://img.shields.io/badge/Skills-14-081431?style=flat-square">
+  <a href="./LICENSE"><img alt="License MIT" src="https://img.shields.io/badge/License-MIT-1F6FEB?style=flat-square"></a>
+</p>
 
-由 [ZenStory AI](https://zenstory.ai) 维护，仓库地址 `github.com/zenstory-ai/oh-story-claudecode`（原 `worldwonderer/oh-story-claudecode`，旧链接自动跳转）。Maintained by ZenStory AI; previously hosted at `worldwonderer/oh-story-claudecode`, old links redirect.
+<p align="center">
+  <a href="https://t.me/ohstoryclaudecode"><img alt="Telegram 交流群" src="https://img.shields.io/badge/Telegram%20%E4%BA%A4%E6%B5%81%E7%BE%A4-26A5E4?style=for-the-badge&logo=telegram&logoColor=white"></a>
+  <a href="https://github.com/zenstory-ai/oh-story-claudecode/discussions"><img alt="GitHub Discussions" src="https://img.shields.io/badge/GitHub%20Discussions-181717?style=for-the-badge&logo=github&logoColor=white"></a>
+</p>
 
-## 核心思路
+https://github.com/user-attachments/assets/8f9cc11b-1fb8-4cc5-a084-e0deb05ec791
+
+## 这是什么
+
+Oh Story 覆盖长篇与短篇网络小说的全流程：**扫榜选材 → 拆解爆款 → 搭大纲写正文 → 去AI味 → 生成封面图**。
+它以 14 个 skill 的形式装进你已经在用的编程 Agent，写作用的模型就是该 Agent 的模型，不需要 GPU，也不需要另外配模型。
+
+- **用文件系统当记忆** — 设定、大纲、正文、追踪分目录落盘。几十万字的长篇不靠对话记忆硬撑，压缩上下文或换新会话后，照样从文件读回当前进度、人物状态、伏笔和待填的坑。
+- **写前守卫与写后去味** — 长篇没写细纲不直接动笔，写完自动扫半截断章、大纲词漏进正文和常见 AI 腔。支持 hooks 的宿主自动拦截和巡检，其他环境按 skill 流程走完检查。
+- **适配 7 款编程 Agent** — Claude Code · Codex CLI · Google Antigravity · OpenCode · ZCode · OpenClaw · Reasonix；能读取项目文件的通用 Web AI / Agent 环境也可使用。
+- **面向的平台** — 起点、番茄、晋江、七猫、知乎盐言等长短篇平台。
 
 > **套路 = 确定性的情绪满足**
 
-专业作者的方法论三步走：
+先**扫榜**摸清题材风口、人设与开篇切入点，再**拆文**扒出爆款的黄金三章、爽点节奏与钩子写法，最后用钩子、爽点和期待感搭自己的书。
+设定、正文和追踪各自落盘，剧情方向由作者拍板，Agent 按敲定的方案推进。
 
-1. **扫榜**：分析热门榜单，洞察题材、人设、切入点。
-2. **拆文**：拆解大纲节奏与剧情素材，建立个人模块库。
-3. **商业化写作**：学习并运用钩子、爽感、期待感等核心技巧。
+## 安装
 
-围绕四条线展开：爆款逆向 · 剧情模块化重组 · 上下文状态分层管理 · 人机协同。
+```bash
+npx skills add zenstory-ai/oh-story-claudecode -y -g
+```
 
-> 最新版本 **v0.7.10**（2026-09-09）。完整变更见 [CHANGELOG.md](CHANGELOG.md) 与 [Releases](https://github.com/zenstory-ai/oh-story-claudecode/releases)；升级后请重跑 `/story-setup` 并新开会话。Antigravity 部署方式见下文「使用说明」。
+`-g` 全局安装，所有目录可用；去掉 `-g` 则只装到当前目录。**更新时重新执行同一条命令即可。**
+
+也可以直接对 Agent 说一句话（支持导入 GitHub 仓库 / skill 的平台都适用，例如 WorkBuddy，见社区写的[开书实操](https://zhuanlan.zhihu.com/p/2087452622655592204)）：
+
+```
+安装这个 skill https://github.com/zenstory-ai/oh-story-claudecode
+```
+
+装好后，在写作项目根运行 `/story-setup`（Codex 用 `$story-setup`）部署当前宿主支持的 hooks / agents / references，**然后新开会话**。
+
+也可通过 [ClawHub](https://clawhub.ai/) 查找；本仓库的发布范围见 [ClawHub 发布清单](.clawhub/publish.json)。
+
+> 各 Agent 的部署差异、已知限制与安装排查（Windows `ENOENT`、Antigravity `agy -p`、目录残留等）见 **[各编程 Agent 的部署与安装排查](docs/hosts.md)**。
+> 版本与变更见 [CHANGELOG.md](CHANGELOG.md) 和 [Releases](https://github.com/zenstory-ai/oh-story-claudecode/releases)，已有项目的更新步骤见[升级指南](skills/story-setup/UPGRADING.md)。
+
+## 看看它的输出
+
+下面每一份都是 skill 跑出来的真实文件（外加一段专门构造的 AI 腔反例），完整文件在 **[demo/](demo/README.md)**。
+
+### 续写状态卡：为什么连载几百章不崩盘
+
+下面这本是项目作者自己的长篇，用 `/story-import` 把已发的前 20 章反向重建成可续写工程。
+下面是**开写第 21 章之前**的状态卡。`/story-long-write` 靠
+`追踪/上下文.md` 记账（固定 7 栏、上限 12 KiB），动笔前只挑本章用得上的状态交给写手，不把整张卡硬塞进正文提示词；本章细纲、相关设定和出场角色卡按需读取：
+
+```markdown
+## 当前位置
+- 当前章：第20章   卷：第一卷·军宣整顿   故事时间：《如愿》点击破亿后的第二天
+
+## 长期约束
+- 军宣爽点必须通过作品效果、传播数据和围观反应链兑现，不能只靠系统播报。
+- 钟嘉嘉未公开的军方培养安排属于作者真相，正文揭示前不能当成读者已知。
+
+## 活跃伏笔
+- F016｜钟嘉嘉并非普通军报实习生，她的军方家庭背景仍未完全公开｜埋第7章｜回收章未定｜高
+- F049｜吴伟收到寻衅滋事公诉通知，最终法律结果尚未落地｜埋第18章｜回收章未定｜高
+- F054｜一位老兵邀请江晨上门听当年的故事，为后续创作提供入口｜埋第20章｜回收章未定｜高
+
+## 下一章承诺
+- 先补第21章细纲，再承接老兵邀请、新歌伴奏和钢琴能力。
+```
+
+**「作者真相」和「读者已知」分开记录**——避免角色提前知道未公开的设定，或把还没揭晓的伏笔提前写破。
+完整文件：[`demo/长篇/.../追踪/上下文.md`](demo/长篇/让你管账号，你高燃混剪炸全网/追踪/上下文.md)
+
+### 续写第 21 章：从门禁到回写，一条链走完
+
+上面的视频录的就是这一段。`/story-long-write 写第21章` 在一次真实会话里的产出与每一道检查：
+
+```text
+细纲       细纲_第021章.md              追踪里写着「第21章尚无细纲」，skill 先补纲：单元 L1-03、目标情绪、本章标价、闭环状态、10 个情节点四列表格（外加可选的展开粒度列）
+章级检查   storyctl.py chapter check   ready · 字数 2068 / 目标 2300
+             ├ check-ai-patterns.js     0 命中
+             ├ check-degeneration.js    0 命中
+             └ normalize-punctuation    0 命中
+追踪提交   storyctl.py chapter commit  tracking_committed=true · state_revision 0 → 1
+追踪文件   tracking_commit.py check    上下文.md / 伏笔.md / 角色状态/ / 时间线/ / 逐章记录/ 全部由 state 重生成，逐字一致
+```
+
+动笔前先过细纲与追踪门禁，细纲验收通过后，由 `narrative-writer` 分两段写正文。单章交稿前核对设定与伏笔（日更连写则在整批写完后集中核对），读感发虚或 AI 味重时再做去味润色，最后跑完本地收尾脚本与 `chapter check`。
+
+提交之后，追踪状态是工具从 `_tracking-state.json` 整份重新生成的，**手改自动生成的追踪文件会被 `check` 拒绝**。
+对照上面的状态卡，回写实际改了什么（节选，省略了同批滚动的近三章速记与角色状态）：
+
+```diff
+ ## 当前位置
+-- 当前章：第20章   场景：火箭军文工团，钟嘉嘉送来老兵书法礼后
++- 当前章：第21章   场景：火箭军文工团办公室，江晨收到谭守义地址回信后
+ ## 活跃伏笔
+-- F054｜一位老兵邀请江晨上门听当年的故事，为后续创作提供入口｜埋第20章｜回收章未定｜高
++- F054｜谭守义已给邻市地址，江晨定次日上门听故事｜埋第20章｜第22章｜高
++- F057｜谭守义有个讲了五十年没人听全过的故事，内容未揭示｜埋第21章｜第22章｜高
++- F058｜任务三：离别主题作品、开放日当天热度1000万+、限时14天｜埋第21章｜第27章｜高
+ ## 下一章承诺
+-- 先补第21章细纲，再承接老兵邀请、新歌伴奏和钢琴能力。
++- 江晨向周薄森请假出营，赴邻市听谭守义讲完整故事并录音，揭示F057。
+ ## 连贯性风险
+-- 第21章尚无细纲，不能直接写正文。
++- 谭守义故事的作者真相为候选（E015），作者可在第22章细纲前改；揭示前不当读者已知。
+```
+
+新角色谭守义有了自己的设定卡和角色状态文件；他那个「讲了五十年没人听全过」的故事，真相候选（E015）记在
+`时间线/作者真相.md` 并标为未揭示，`读者已知.md` 那一栏只有江晨看到的那句话。被退役的那条风险写进了
+`逐章记录/第021章.md` 的「本章退役登记」——**状态不会无声漏掉**。
+
+成品：[`正文/第021章_离别怎么会开花.md`](demo/长篇/让你管账号，你高燃混剪炸全网/正文/第021章_离别怎么会开花.md)
+· [`大纲/细纲_第021章.md`](demo/长篇/让你管账号，你高燃混剪炸全网/大纲/细纲_第021章.md)
+· [`设定/角色/谭守义.md`](demo/长篇/让你管账号，你高燃混剪炸全网/设定/角色/谭守义.md)
+· [`追踪/逐章记录/第021章.md`](demo/长篇/让你管账号，你高燃混剪炸全网/追踪/逐章记录/第021章.md)
+
+
+### 拆文报告：评分要给得出理由
+
+`/story-long-analyze` 拆《盘龙》开篇 23 章（约 6.2 万字，起点经典，仅作拆解素材），按番茄男频升级流读者口味打分：
+
+| 维度 | 评分 | 说明（节选） |
+|------|------|------|
+| 开篇钩子 | 2 | 前 500 字纯地理定位 + 晨练群像，无悬念 / 冲突 / 反差，靠「平民努力出头」慢渗。代入扎实但即时拉力弱。 |
+| 主角塑造 | 4 | 延迟点名（第 60 段才点名）+ 他人惊叹引出，「衰败贵族 + 六岁神童」反差立人设。三章里最强项。 |
+| 爽点设计 | 1 | 三章零传统爽点，爽感被刻意延迟到第 18 章金手指登场，赌代入复利。 |
+
+> **综合**：三章是「立人设强、给爽点零」的极端结构。直接照搬会劝退番茄读者，
+> 但拆出来的局部技法（导师代言设定、延迟点名、身体反应外化）高度可复用。
+
+完整报告：[`demo/拆文库/盘龙/拆文报告.md`](demo/拆文库/盘龙/拆文报告.md)
+
+### 短篇拆文：把自己的作品拆成可复用的模块
+
+`/story-short-analyze` 拆《曾将爱意私藏》（作者自己的短篇，约 8,500 字，追妻火葬场 · 死遁），
+产出 54 个情节节点、11 项写作手法。每个节点都锚定原文，并标注情绪类型与强度（−9~+9）：
+
+| 原文 | 抽出的结构 |
+|---|---|
+| 「霍总还不打算让沈暮月母子进门吗？」<br>「没必要，私生子而已。」<br>我正准备推门而入，听到这话，手停在了半空。 | **N1 门口偷听到「私生子而已」**<br>类型{信息} · 情绪{震惊}{−7}<br>手法{开篇即冲突+信息差} |
+| 霍庭煜对我没有爱。<br>我默然抽回了手。<br>该放弃自己的执念了。 | **N2 认清对方无爱，决意放弃执念**<br>类型{情绪} · 情绪{心酸}{−5} |
+
+同一份产出里，`写作手法.md` 直接点出原作的代价：
+
+> **POV 代价**：男主的转变缺乏过程展示，N47 的内心独白集中倒出「早就原谅、夜不能寐、深爱」，
+> 略显直白说明（tell 多于 show）——这是第一人称追妻文的通病。
+
+下游 `/story-short-write` 结合报告、情节节点、写作手法和原文构思新篇。
+完整产出：[`demo/拆文库/曾将爱意私藏/`](demo/拆文库/曾将爱意私藏/)
+
+### 去 AI 味：逐条匹配已知句式
+
+`/story-deslop` 的本地检查是写作 lint：逐条匹配已知句式模板，
+给出行号、命中片段和改写方向。拿一段人工构造的 AI 腔样例扫描，8 处命中（7 blocking）：
+
+```text
+改前.md:7:20     [blocking] em-dash             (么叫做命运的安排——不是巧合，而是一)
+改前.md:7:22     [blocking] not-is-comparison   (不是巧合，而是一种冥冥之中的注定)
+改前.md:11:1     [blocking] negation-parade     (没有犹豫，没有生涩，)
+改前.md:19:3     [blocking] voice-contrast      (声音不大，却)
+改前.md:21:2     [blocking] not-is-comparison   (不是一次简单的弹奏，而是一场蓄谋已久的惊艳亮相)
+改前.md:3:1      [advisory] cliche-density-tic  (仿佛 一丝 深吸一口气 缓缓 微微)
+```
+
+取第 21 章正文中的同一场戏跑同一个扫描：**零命中，exit 0**。
+两段字数几乎一样，差别在于改前用抽象判词替读者定性，改后把同一件事交给可见的动作和物件。
+
+完整对照与全部 8 条命中：**[demo/去AI味对照/](demo/去AI味对照/README.md)**
+
+### 本地写作工作台与封面
+
+运行 `/story dashboard`（Codex 用 `$story dashboard`）打开本地工作台，浏览拆文库与长短篇项目文件树，支持搜索、Markdown 预览、文本编辑、冲突保护保存和确认删除。顶栏可切换浅色、深色；服务仅监听 `127.0.0.1`，小说内容不会上传。
+
+| 工作台 | `/story-cover` 生成的封面 |
+|---|---|
+| <img src="demo/story-dashboard.png" width="420"> | <img src="demo/封面-剑道独尊.png" width="200"> |
+
+## 安装后的第一条请求
+
+复制下面对应的一条，把〈括号里的内容〉换成你的书即可开始：
+
+1. **开一本新书（先盘黄金三章与人设）**
+   > 我想开一本〈番茄男频都市脑洞 / 晋江古言穿书〉新书，核心卖点是〈一句话脑洞或金手指〉。先帮我把已想好的设定和还没定下来的地方理出来，搭一个黄金三章的开篇框架（核心冲突、主角视角限制、前三章怎么起钩子和兑现爽点）。先别直接写正文，题材取舍、人物动机和后续走向等我拍板再动笔。
+2. **导入已有书稿接着写**
+   > 把这份旧稿导进来整理成连载项目（`/story-import`）。第 1–〈N〉章是定稿，〈文件名〉是第〈N+1〉章没写完的残稿；保留原稿别覆盖，残稿先别算成正式章节，反推出来的人物设定和伏笔单列出来等我确认。先把章节范围、人物状态、前后矛盾的地方和待确认项列给我看，先不续写。
+3. **改一段不得劲或 AI 味重的正文**
+   > 这段戏读着太〈水 / 像总结陈词 / 解释味太重〉了（`/story-deslop`）。别改剧情走向和人物当下知道的信息，也别把后面才揭晓的伏笔提前漏出来；先帮我指出哪几句出戏，给一版改前改后对照和改法说明，不要全书通改，改哪几处由我定。
 
 ## 流程总览
+
+扫榜和拆文按需选用，有脑洞也可以直接聊人设和大纲；正式写正文前，先跑一次 `/story-setup` 部署项目。
 
 ```mermaid
 flowchart LR
@@ -72,8 +267,8 @@ flowchart LR
     scan_s --> analyze_s
     analyze_l --> write_l
     analyze_s --> write_s
-    entry_r -.->|跳过准备| write_l
-    entry_r -.->|跳过准备| write_s
+    entry_r -.->|直接规划| write_l
+    entry_r -.->|直接规划| write_s
     entry_i -.->|推荐先部署| setup
     setup -.->|逆向导入| import_l
     import_l -.->|续写| write_l
@@ -81,323 +276,57 @@ flowchart LR
     write_s --> deslop
 ```
 
-## 安装
-
-**方式一** 直接告诉 Claude Code / Antigravity / OpenCode / ZCode / OpenClaw / Codex / Reasonix，或其他支持导入 GitHub 仓库/skill 的 Web AI / Agent 平台：
-
-```
-安装这个 skill https://github.com/zenstory-ai/oh-story-claudecode
-```
-
-升级时再说一次同一句话即可。
-
-**方式二** 命令行：
-
-```bash
-npx skills add zenstory-ai/oh-story-claudecode -y -g
-```
-
-`-g` 全局安装，所有目录可用；去掉 `-g` 则只装到当前目录。更新时重新执行同一条命令即可。
-
-这条 `npx skills` 独立安装路径不经过 Claude Code 或 ZCode marketplace，不受下方插件打包身份调整影响。
-
-Windows 上偶尔会看到 `ENOENT ... mkdir` 报错但末尾仍显示 `Done!`，这是有技能没装全。story-setup 的参考资料目录整个缺了一块时，跑 `/story-setup` 会提示参考资料包不完整；其它形式的残缺不一定有提示。无论有没有报错，重跑同一条安装命令即可修复。
-
-排查已安装环境时，向 Agent 说「用 story-setup 检查写作环境」，或给 story-setup 传入 `check` 参数。它按目标 CLI 的部署清单检查并给出处理建议；仅检查不会改动项目，需要修复时仍走原来的 setup 流程。
-
-<details>
-<summary>Claude Code / Antigravity / Codex / ZCode / OpenCode / OpenClaw / Reasonix / Web AI 使用说明</summary>
-
-**Claude Code 用户：** marketplace 名保持 `oh-story-skills`，其中现在只有一个 `oh-story` bundle，由 Claude Code 从仓库根自动发现全部 13 个 Skills：
-
-```bash
-claude plugin marketplace add https://github.com/zenstory-ai/oh-story-claudecode
-claude plugin install oh-story@oh-story-skills
-```
-
-安装后使用 `/oh-story:story-setup`、`/oh-story:story dashboard` 等命令。旧插件用户按[升级指南](skills/story-setup/UPGRADING.md#插件打包身份迁移v079-同版本修复)迁移；该身份迁移始于 v0.7.9 的同版本修复；仍使用旧插件身份的用户需主动刷新市场并重装。命令详见 [Claude Code 插件参考](https://code.claude.com/docs/en/plugins-reference)。
-
-**Antigravity 用户：** 先用 `/skills` 或自然语言运行 `story-setup`，选择 `target_cli=antigravity`。它只在当前写作项目创建/更新 13 个 `.agents/skills/` 已知目录、7 个 `.agents/agents/agent-name/agent.md` 已知定义（`agent-name` 替换为实际名称）、`.agents/rules/oh-story.md`、两个 `.agents/hooks/` runtime 文件与 `.agents/hooks.json` 的 `oh-story` 管理组；其他用户 Skills、Agents、Rules、Hooks 和 hook groups 都保留，部署器本身不会写 `~/.gemini/`。项目内 Skills 使用真实目录；若 `.agents/skills` 已是 symlink，会先解释 git diff 并征求明确迁移同意，未同意绝不沿链接写入。Hook 依赖 PATH 中的 `node`；部署后新开 conversation，再分别在 IDE 与交互式 `agy` 中 smoke test。**`agy 1.1.22 -p` 暂不在支持面内**：每次 headless 进程都可能在静默鉴权完成前扫描 workspace，鉴权后又不重载 custom agents/hooks，导致 skill 回退、`subagent not found`，甚至把普通模型输出写到 `~/.gemini/antigravity-cli/scratch/`。命令行写作请从项目目录启动交互式 `agy`，确认 `/skills`、`/agents`、`/hooks` 已发现 oh-story 后再发任务；测试后检查 scratch 没有意外小说产物。
-
-**Codex 用户：** repo 内直接使用：Codex 会扫描 `$REPO_ROOT/.agents/skills`（指向 `skills/` 的 symlink）发现 13 个 skill；用 `$story`、`$story-setup` 或 `/skills` 调用。Windows 上 git 需开 `core.symlinks=true`，否则 symlink 失效，改走下方 `$story-setup` 部署。
-
-跑 `$story-setup` 部署到写作项目后，会写入 `.codex/agents/*.toml`、`.codex/hooks.json`、`.codex/hooks/{story_codex_hook.py,run-story-hook.sh,run-story-hook.cmd}` 和 `.codex/skills/story-setup/references/agent-references/`；请信任项目 `.codex/` 配置层并在 `/hooks` review/trust hooks、新开 Codex 会话，让 custom agents 生效。
-
-**ZCode 用户：** 在 Plugin Management 中添加本仓库，安装 `oh-story`，即可调用全部 13 个 Skills/Commands。市场名可能显示 `oh-story-zcode`（根 catalog）或 `oh-story-skills`（Claude catalog）；选择其中一个即可，内容相同。旧版多条目安装按[升级指南](skills/story-setup/UPGRADING.md#插件打包身份迁移v079-同版本修复)迁移。`$story-setup` 选择 `target_cli=zcode` 会部署 `.zcode/skills/`、`.zcode/commands/`、`.zcode/hooks/story_zcode_hook.js`，安全合并 `.zcode/config.json` 与根 `AGENTS.md`；Hook 依赖 PATH 中的 `node`。ZCode 3.3.4 不执行项目/plugin custom agents，也没有 `PreCompact` / `SessionEnd`，相关流程会明确降级 solo/direct，compact 后由 `SessionStart` 恢复上下文。插件格式见 [ZCode 官方文档](https://zcode.z.ai/en/docs/plugin)。
-
-**OpenCode 用户：** 全局安装后 opencode 自动从 `~/.claude/skills/` 发现 skills；首次用自然语言触发 story-setup（如「用 story-setup 部署网文写作环境」），**部署后退出重进 `opencode -c`** 才能用 slash command。部分 hook 行为与 Claude Code 有差异（session-start / session-end / compact 等），详见 [CONTRIBUTING.md](CONTRIBUTING.md) 的 OpenCode 章节。
-
-**OpenClaw 用户：** 当前支持 skills-only：OpenClaw 可从 workspace `skills/`、`.agents/skills`、`~/.agents/skills`、`~/.openclaw/skills` 等 skill root 发现本项目 13 个 skill；`SKILL.md` 已按 OpenClaw 要求使用单行 `name` / `description` 与单行 JSON `metadata.openclaw`。`story-setup` 选择 `target_cli=openclaw` 时会把 skills 复制到项目 `skills/` 并写入 OpenClaw 版 `AGENTS.md`；agents/hooks 暂不部署，写正文前大纲守卫在 OpenClaw 下是 skill 内软约束。部署后如未显示新 skills，请新开 OpenClaw session 或等待 watcher 刷新。
-
-**Reasonix 用户：** 当前支持 skills + 原生 plugin manifest：Reasonix 原生扫描项目 skill root（`.agents/skills` 等，指向 `skills/` 的 symlink）发现 13 个 skill，用 `reasonix doctor capabilities` 校验；也可用根 `reasonix-plugin.json` 走 `reasonix plugin install`。`story-setup` 选择 `target_cli=reasonix` 时会把 skills 复制到项目 `skills/` 并写入 Reasonix 版 `AGENTS.md`；hooks/custom agents 暂不部署，涉及专业 Agent 的 skill 走 solo/direct fallback。Windows 未启用 symlink 时改走原生 plugin。
-
-**Web AI / 通用 Agent 用户：** 平台能读取 GitHub 仓库或项目文件时，可让 Agent 读取 `skills/*/SKILL.md` 与对应 `references/`；需要本地副本时，`story-setup` 可选 `target_cli=generic`，只写通用 `AGENTS.md` 和 `skills/`。无本项目 hooks/custom agents 的环境按 skill 内软约束或 solo/direct fallback 执行。
-
-**OpenClaw / Reasonix / 通用路径的目录残留要手动清：** 这三条路径的 skill 副本在项目 `skills/` 里，重跑 `/story-setup` 执行的就是项目里那份，自动清理到不了。项目里若出现 `skills/story-setup/references/agent-references/agent-references/`（可能嵌了多层）或 `skills/story-setup/skills/`，手动删掉。要让项目里的 skill 文本本身更新，还需要重新安装本项目后，用新包覆盖项目 `skills/` 下这 13 个目录。
-
-</details>
-
-升级后如果项目里已经跑过 `/story-setup`，建议在项目根重跑一次 `/story-setup`，同步 hooks / agents / references。每版变更见 [CHANGELOG.md](CHANGELOG.md) 与 [Releases](https://github.com/zenstory-ai/oh-story-claudecode/releases)。
-
-**多 agent 协作要先部署再新开会话：** 7 个专业 agent（story-architect、narrative-writer、consistency-checker 等）由 `/story-setup` 写入项目 `.claude/agents/`，由 `$story-setup` 写入 `.codex/agents/*.toml`，或由 Antigravity `story-setup` 生成 `.agents/agents/agent-name/agent.md`（`agent-name` 替换为实际名称）。Antigravity 使用 `invoke_subagent` + 同名 `TypeName`；运行时未暴露 custom subagent 时按 skill 明确降级 solo/direct。判断是否生效：新会话里跑 `/story-review`，报告头是 `Effective Mode: full/lean` 即注册成功，是 `Fallback: ... -> solo` 说明当前运行时未暴露该 agent。
-
-**导入续写顺序：** 推荐先在写作项目根运行 `/story-setup`（部署 hooks/agents/AGENTS），新开/刷新会话后运行 `/story-import` 导入已有小说，再用 `/story-long-write 日更` 或 `/story-long-write 写第N章` 续写。也可以直接运行 `/story-import`；它会先检测是否已 setup，未部署时让你选择先去 setup 或继续串行导入。
-
-**作者习惯会跨会话延续：** 对 `/story` 说“记住我的写作习惯”，稳定偏好会进入工作区 `.story/作者记忆/`；看到 `Author Memory Receipt` 才算写入成功。普通写作只查询本次相关的已确认条目，输出硬上限 2KB，不把完整画像、候选和历史塞进正文 prompt。它与每本书的剧情追踪分开，当前要求、本书设定和硬性门禁始终优先。
-
 ## Skills
+
+**先用这几个就够写书**：装一次 `story-setup`，之后长篇用 `story-long-write`、短篇用 `story-short-write`，写完用 `story-deslop` 去 AI 味；拿不准叫哪个就说 `/story` 加一句话。
 
 | Skill | 触发 | 说明 |
 |:------|:-----|:-----|
 | `story-setup` | `/story-setup` `$story-setup` `/准备写书` | 环境部署 · Claude/Antigravity/OpenCode/Codex/ZCode/OpenClaw/Reasonix + generic（已有配置安全合并） |
-| `story` | `/story` `$story` `/story dashboard` | 工具箱路由 · 模糊意图分发 + 作者习惯管理 + 本地拆文/项目 Dashboard |
-| `story-long-write` | `/story-long-write` `/写长篇` | 长篇写作 · 大纲搭建、人物设定、正文输出 |
-| `story-long-analyze` | `/story-long-analyze` | 长篇拆文 · 黄金三章、爽点设计、节奏分析 |
-| `story-long-scan` | `/story-long-scan` | 长篇扫榜 · 起点/番茄/晋江市场趋势 |
-| `story-short-write` | `/story-short-write` | 短篇写作 · 情绪设计、反转构思、精修出稿 |
-| `story-short-analyze` | `/story-short-analyze` | 短篇拆文 · 故事核、结构分析、情感线、反转设计、写作手法、共鸣分析 |
-| `story-short-scan` | `/story-short-scan` | 短篇扫榜 · 知乎盐言/番茄短篇风口数据 |
+| `story` | `/story` `$story` `/story dashboard` | 工具箱路由 · 模糊意图与作者习惯请求分发 + 本地拆文/项目 Dashboard |
+| `story-long-write` | `/story-long-write` `/写长篇` | 长篇写作 · 大纲搭建、人物设定、正文输出、作者偏好管理 |
+| `story-short-write` | `/story-short-write` `/写短篇` | 短篇写作 · 情绪设计、反转构思、精修出稿、作者偏好管理 |
 | `story-deslop` | `/story-deslop` `/去AI味` | 去AI味 · 检测并清除 AI 写作痕迹 |
+
+**进阶**：拆对标书、扫榜、导入旧稿、多视角审稿、发布资料、封面，需要时再用。
+
+| Skill | 触发 | 说明 |
+|:------|:-----|:-----|
+| `story-long-analyze` | `/story-long-analyze` `/长篇拆文` | 长篇拆文 · 黄金三章、爽点设计、节奏分析 |
+| `story-long-scan` | `/story-long-scan` `/长篇扫榜` | 长篇扫榜 · 起点/番茄/晋江市场趋势 |
+| `story-short-analyze` | `/story-short-analyze` `/短篇拆文` | 短篇拆文 · 故事核、结构分析、情感线、反转设计、写作手法、共鸣分析 |
+| `story-short-scan` | `/story-short-scan` `/短篇扫榜` | 短篇扫榜 · 知乎盐言/番茄短篇风口数据 |
 | `story-import` | `/story-import` `/导入小说` | 逆向导入 · 将已有小说反向解析为标准项目结构 |
-| `story-review` | `/story-review` `/审查` | 多视角审查 · 4 Agent 多视角审稿 + 番茄/起点/知乎评分标准 |
-| `story-cover` | `/story-cover` `/封面` | 封面生成 · 书名题材分析 + GPT-Image-2（Codex 内置用量 / API 回退） |
+| `story-review` | `/story-review` `/审查` | 多视角审查 · full / lean / solo 模式 + 番茄/起点/知乎评分标准 |
+| `story-publish` | `/story-publish` | 发布准备 · 用已有设定和大纲整理平台建书资料（书名、简介、标签），目前适配番茄 |
+| `story-cover` | `/story-cover` `/封面` | 封面提示词或成图 · 成图调用 GPT-Image-2（Codex 内置用量 / API 回退） |
 | `browser-cdp` | `/browser-cdp` | 浏览器操控 · CDP 协议复用登录态抓取数据 |
 
 > `story-deslop` 的本地检查是写作 lint：blocking 只限确定性句式/标点问题，其他提示按读感判断；朱雀等外部检测只作自测参考，不替代人工读感。
 
 自然语言同样触发：
 - 「帮我开书」→ `story-long-write`
+- 「整理番茄发布资料」→ `story-publish`
 - 「这篇太 AI 了」→ `story-deslop`
 - 「把我的书导进来」→ `story-import`
 - 「打开工作台」→ `story dashboard`（本机浏览拆文库与写作项目，可轻量编辑）
-- 「记住我的写作习惯」→ `story` 作者记忆（原话证据、待确认、冲突替代）
-- 「沈栀现在什么状态」→ 自动 spawn `story-explorer` agent
+- 「记住我的写作习惯」→ `story` 转交对应写作 skill 记进作者习惯卡（保留原话、确认后生效、改主意可覆盖）
+- 「沈栀现在什么状态」→ 检索项目资料，宿主支持时交给 `story-explorer`
 
-### Story Dashboard
+## 工作原理
 
-运行 `/story dashboard`（Codex 用 `$story dashboard`）打开本地写作工作台，浏览拆文库与
-长/短篇项目文件树，并完成搜索、Markdown 预览、文本编辑、冲突保护保存和确认删除。
-服务仅监听 `127.0.0.1`，小说内容不会上传。
+文件、专职助手与 hooks 配合跑完写书闭环，细节见 **[工作原理：Agent、Hooks 与项目结构](docs/architecture.md)**。
 
-![OH STORY 本地写作工作台](demo/story-dashboard.png)
+**① 文件系统当记忆** — 一部长篇动辄几十万字。设定、大纲、正文、追踪拆成独立目录各自维护，
+对话只负责创作，不负责记账。`追踪/` 下的 `_tracking-state.json` 是唯一底账，
+自动生成上下文卡、伏笔账本、角色状态和「作者真相 / 读者已知」双时间线。
 
-<details>
-<summary>封面生成示例</summary>
+**② 7 个专职助手分工** — `story-architect` 排大纲与细纲，`narrative-writer` 写正文，`consistency-checker` 检查前后矛盾与伏笔遗漏，
+其余分别管人物设定、考据查资料、书稿检索和拆书抽取。支持项目 Agent 的宿主由 `/story-setup` 部署，**部署后新开会话**；不支持的环境由主会话接管。
 
-![封面示例 — 剑道独尊](demo/封面-剑道独尊.png)
+**③ 写前守卫与写后巡检** — 已接入正文守卫的宿主会在没写细纲就开写新章、或上一章追踪还没入账时直接拦下；写完自动扫半截断章和常见 AI 腔，命中硬伤时章级检查不放行。各宿主的 hooks 与回退方式见[部署说明](docs/hosts.md)。
 
-</details>
-
-<details>
-<summary>拆文 demo — 盘龙</summary>
-
-使用 `/story-long-analyze` 深度模式分析《盘龙》前23章的完整输出：
-
-```
-demo/拆文库/盘龙/
-├── 概要.md              # 全书概要 + 章节索引
-├── 拆文报告.md           # 五维评分 + 爽点密度 + 可借鉴套路
-├── 文风.md              # 句长/标点/对话潜台词/情绪节奏 + 原文锚点
-├── 章节/
-│   ├── 第1章_深度拆解.md … 第3章_深度拆解.md  # 黄金三章逐章深度分析
-│   └── 第1章_摘要.md … 第23章_摘要.md          # 每章一个摘要文件
-├── 角色/
-│   ├── 林雷.md           # 主角完整档案
-│   ├── 霍格.md           # 核心配角
-│   ├── 希尔曼.md         # 核心配角
-│   ├── 希里.md           # 功能角色
-│   ├── 德林柯沃特.md      # 核心配角
-│   ├── 沃顿.md           # 功能角色
-│   └── 角色关系.md        # 关系网络
-├── 剧情/
-│   ├── 故事线.md          # 框架识别 + 4剧情 + 2故事线
-│   ├── 强者过境与魔法启蒙.md 等  # 五个分场景剧情单元
-│   ├── 节奏.md            # 节奏/关键信息递进/情绪触发爆发节律
-│   └── 情绪模块.md        # 读者需求/情绪引擎/可复用写作模块
-└── 设定/
-    ├── 世界观/
-    │   ├── 背景设定.md    # 核心规则 + 特殊设定
-    │   ├── 力量体系.md    # 战气 + 魔法 + 等级
-    │   ├── 地理.md        # 安达卢西亚 + 玉兰大陆
-    │   └── 金手指.md      # 盘龙戒指 + 德林柯沃特
-    └── 势力/
-        └── 巴鲁克家族.md  # 龙血血脉家族档案
-```
-
-长篇拆文会额外生成 `文风.md`，并在 `剧情/` 下产出 `节奏.md`（节奏/关键信息递进/情绪触发爆发节律）和 `情绪模块.md`（读者需求/情绪引擎/可复用写作模块）；日更写作会通过 `对标/{书名}/剧情/` 读取这些素材，避免文风、节奏和情绪模块偏离对标书。
-
-</details>
-
-<details>
-<summary>拆文 demo — 曾将爱意私藏（短篇）</summary>
-
-使用 `/story-short-analyze` 拆解短篇《曾将爱意私藏》（约 8500 字，追妻火葬场 · 死遁）的完整输出：
-
-```
-demo/拆文库/曾将爱意私藏/
-├── 原文/原文.txt        # 原文备份
-├── 拆文报告.md          # 故事核 + 五维评分 + 爆点6维 + 认知反转 + 共鸣9层
-├── 情节节点.md          # 54 个情节节点（原文引用 + 情绪标记 −9~+9）
-├── 写作手法.md          # POV / 对话 / 信息差 / 物件钩子 等 11 项
-└── _meta.json           # 结构计数 structure_counts（Phase 7 门控依据）
-```
-
-短篇拆文产出 `拆文报告 / 情节节点 / 写作手法`，下游 `/story-short-write` 据此写同题材新短篇。
-
-</details>
-
-<details>
-<summary>导入 demo — 让你管账号，你高燃混剪炸全网（长篇续写工程）</summary>
-
-推荐先 `/story-setup` 部署写作项目，再使用 `/story-import` 把作者已发布的前 20 章（约 3.7 万字）逆向重建为可续写的写作工程，最后接 `/story-long-write 日更` 或 `/story-long-write 写第21章` 续写：
-
-```
-demo/长篇/让你管账号，你高燃混剪炸全网/
-├── 正文/        第001–020章（已发布原文）
-├── 大纲/        大纲.md · 卷纲_第1卷.md · 细纲_第001–020章.md（1 章 1 文件）
-├── 设定/        角色/{江晨·钟嘉嘉·周薄森·张耀祖·吴伟·李林}
-│                世界观/{背景设定·金手指} · 关系.md · 题材定位.md · 文风.md
-└── 追踪/        _tracking-state.json · 上下文.md · 伏笔.md · 逐章记录/
-                 角色状态/{角色名}.md · 时间线/{作者真相.md·读者已知.md}
-```
-
-逐章提取（事件 / 角色 / 设定 / 伏笔 / 时间线）反推为续写 bible，作者从第 21 章无缝接着写。
-
-</details>
-
-## Agent 体系
-
-写作 skill 内部通过 7 个专业 Agent 协作，各司其职：
-
-| Agent | 模型 | 职责 |
-|:------|:-----|:-----|
-| **story-architect** | Opus | 故事架构 · 题材定位、大纲结构、钩子/反转设计、情绪弧线 |
-| **character-designer** | Sonnet | 角色设计 · 角色档案、语言风格、动机链、对话创作 |
-| **narrative-writer** | Sonnet | 叙事写手 · 正文写作、去AI味、格式合规 |
-| **consistency-checker** | Haiku | 一致性检查 · 事实冲突扫描、伏笔追踪、S1-S4 分级报告 |
-| **story-researcher** | Sonnet | 资料研究 · CDP 搜索+正文提取、多源交叉验证、结构化参考文件输出 |
-| **story-explorer** | Haiku | 故事查询 · 角色/伏笔/设定/进度只读查询，日更上下文快速加载 |
-| **chapter-extractor** | Haiku | 章节提取 · 摘要+情节点+角色提及，并行拆文核心单元 |
-
-Agent 按需加载 `references/` 中的写作理论（角色设计、对话技法、反转工具箱等 100+ 份方法论文件），不预占上下文。
-
-## 自动化 Hooks
-
-`/story-setup` 为 Claude Code 部署 8 个自动化 hook：
-
-| Hook | 触发时机 | 功能 |
-|:-----|:---------|:-----|
-| session-start.sh | 会话开始 | 显示分支、进度快照、拆文状态 |
-| session-end.sh | 会话结束 | 记录会话日志到 `追踪/session-log.txt` |
-| detect-story-gaps.sh | 会话开始 | 检测设定缺口、大纲缺失、伏笔断线 |
-| pre-compact.sh | 上下文压缩前 | 保存进度快照路径和行数摘要 |
-| post-compact.sh | 上下文压缩后 | 提示读取进度快照恢复上下文 |
-| validate-story-commit.sh | git commit 时 | 检查硬编码属性、设定必填字段（仅警告，不阻断） |
-| guard-outline-before-prose.sh | 写正文前（Write/Edit） | 缺对应细纲/小节大纲时阻止首次创建正文（阻断），强制先搭大纲 |
-| check-prose-after-write.sh | 正文写入后（Write/Edit） | 轻量扫描截断、工程词、毒句式和字数欠账（提醒，不阻断） |
-
-## 项目文件结构
-
-一部长篇动辄几十万字、几百章。设定冲突、伏笔断线、时间线对不上——写到最后全靠记忆硬撑，迟早翻车。
-
-用文件系统把设定、大纲、正文、追踪拆开，每个维度独立维护。对话只负责创作，不负责记忆。
-
-工作区级作者记忆独立于单本小说：
-
-```text
-.story/作者记忆/
-├── _author-memory-state.json  # 唯一结构化权威
-├── 作者画像.md               # 已确认、可用于创作的偏好
-├── 待确认.md                 # 推断、重复修正和冲突候选
-└── 变更记录.md               # 可审计的替代与撤回历史
-```
-
-**长篇：**
-
-```
-{书名}/
-├── 设定/
-│   ├── 世界观/          # 背景、力量体系等，按主题拆文件
-│   ├── 角色/            # 每个人物一个文件（江晨.md、钟嘉嘉.md）
-│   ├── 势力/            # 每个势力/组织一个文件（火箭军文工团.md）
-│   ├── 关系.md          # 角色关系映射
-│   └── 题材定位.md      # 题材核心梗+对标分析
-├── 大纲/
-│   ├── 大纲.md          # 全书卷级结构
-│   ├── 卷纲_第一卷.md   # 每卷一个：爽点节奏+情绪弧线+人物弧线+伏笔+反转
-│   ├── 细纲_第001章.md  # 每章一个：内容概括+多线情节+人物关系/出场顺序+钩子
-│   └── ...
-├── 正文/
-│   ├── 第001章_章名.md
-│   └── ...
-├── 对标/                # 对标参考（结构化子目录从拆文库同步）
-│   └── {对标书名}/
-│       ├── 原文/            # 对标书原文章节
-│       ├── 角色/            # 结构化角色卡（从 analyze 输出同步）
-│       ├── 剧情/            # 结构化剧情线/节奏/情绪模块（从 analyze 输出同步）
-│       ├── 设定/            # 结构化设定（从 analyze 输出同步）
-│       ├── 文风.md          # 日更前读取，用来贴近对标书文风
-│       └── 拆文报告.md      # analyze skill 输出的拆文报告
-├── 追踪/                # 文件优先的连续性状态
-│   ├── _tracking-state.json # 唯一结构化权威状态（不进正文 prompt）
-│   ├── 上下文.md        # 派生续写状态卡（固定 7 栏，≤12KB）
-│   ├── 逐章记录/        # 每章未来相关连续性记录/修订覆盖层（≤3072 bytes）
-│   ├── 角色状态/        # 派生核心角色快照（江晨.md、钟嘉嘉.md）
-│   ├── 伏笔.md          # 派生伏笔当前视图
-│   └── 时间线/          # 派生作者真相.md + 读者已知.md
-├── 参考资料/            # story-researcher 输出的研究资料
-│   └── {topic}.md       # 按研究主题拆分
-```
-
-**短篇：**
-
-```
-短篇/{标题}/
-├── 正文.md              # 完成稿
-├── 小节大纲.md          # 8 节结构 + 情绪曲线
-└── 拆文库/              # 如有参考小说（analyze 输出）
-    └── {书名}/
-        ├── 拆文报告.md
-        ├── 情节节点.md
-        └── 写作手法.md
-```
-
-**拆文库：** 拆文 skill 默认输出到项目根目录 `拆文库/{书名}/`，产出结构化目录（角色/剧情/设定/章节），其中长篇剧情目录包含 `节奏.md` 和 `情绪模块.md`，是 analyze 的源数据（source of truth）。写作 skill 通过 `对标/{书名}/剧情/` 等子目录消费这些资产（项目级引用视图），或自动回退读取 `拆文库/`。
-
-**`.active-book`：** 项目根目录的文本文件，内容是当前活跃书目的**相对路径**（如 `长篇/我的小说`），hook 和写作 skill 据此定位当前项目。
-
-## 知识体系
-
-各 skill 自带 `references/` 知识库，按需加载，不占上下文。
-
-<details>
-<summary>展开各 skill 知识库主题清单</summary>
-
-| 主题 | 内容 | 所在 skill |
-|:-----|:-----|:-----------|
-| 大纲排布 | 五步大纲法 · 故事结构分级 · 节点设计法 · 升级感设计 | long-write |
-| 开头设计 | 开篇模式 · 前 500 字设计 · 黄金三章开头策略 | long-write / short-write |
-| 人物设计 | 角色设定 · 人物提取 · 关系映射 · 动机链 · 群像 | long-write / short-write / short-analyze |
-| 钩子技法 | 章尾钩子 13 式 · 章首钩子 7 式 · 段落级钩子 · 悬念编排 | long-write / short-write / short-analyze |
-| 情绪设计 | 6 种弧形模板 · 期待感管理 · 题材赛道策略 | long-write / short-write |
-| 题材框架 | 长篇八节点 · 短篇压缩三幕 · 8 大题材开头模板 | long-write / short-write / short-analyze |
-| 对话技法 | 节奏 · 潜台词 · 信息控制 · 对话模式数据库 | long-write / short-write |
-| 反转工具箱 | 类型 · 时机 · 误导底层路径 | long-write / short-write |
-| 风格模块 | 对话 · 打斗 · 智斗 · 镜头式写作 · 装逼打脸 · 白描 | long-write |
-| 高级技法 | 小纲四步法 · 高潮逆推 · 双线结构 · AB 交织法 | long-write |
-| 去AI味 | 预防 · 三遍去AI法 · 改写范例库 · 禁用词表 | deslop / long-write / short-write |
-| 质量检查 | 通用 · 长篇专项 · 短篇专项 · 毒点排查 | long-write / short-write / short-analyze |
-| 写作公式 | 21 大题材写作公式 · 三翻四震 · 感情线四阶段 | short-write / short-analyze |
-| 女频写作 | 女读者偏好 · 情感描写 · 感情线模式 · 对标拆书 | short-write |
-| 拆文方法 | 黄金三章 · 情绪曲线 · 结构拆解 · 知乎风格分析 | long-analyze / short-analyze |
-| 短篇方法论 | 故事核 · 情节节点 · 爆点分析 · 写作手法 · 节奏分析 · 共鸣分析 · 人物分类 · 平台适配 | short-analyze |
-| 拆文实例 | 完整案例拆解 · 模板化输出 | short-analyze |
-| 读者画像 | 9 维画像 · 目标读者分析 | long-scan |
-| 市场数据 | 题材趋势 · 平台特性 · 采集格式 · 投稿指南 | long-scan / short-scan |
-| 封面风格 | 10 大题材视觉风格 · 色彩构图 · 提示词模板 | story-cover |
-| 多视角审稿 | 多视角审稿 · 评分标准 · 毒点排查 | story-review |
-
-</details>
+各 skill 的 `references/` 按当前任务加载，未读取的资料不占上下文。全部主题清单见 **[知识体系](docs/knowledge-base.md)**。
 
 ## 适用平台
 
@@ -413,7 +342,7 @@ Agent 按需加载 `references/` 中的写作理论（角色设计、对话技�
 
 ### 能在 Codex、Google Antigravity、OpenCode 里用吗，还是只支持 Claude Code？
 
-oh-story-claudecode 内置适配 Claude Code、Google Antigravity、OpenCode、ZCode、OpenClaw、Codex CLI 和 Reasonix。Codex 会直接扫描仓库内 `.agents/skills` 发现 13 个 skill，用 `$story-setup` 调用；Antigravity 用 `/skills` 或自然语言运行 `story-setup` 并选择 `target_cli=antigravity`；能读取项目文件的 Web AI / Agent 环境也可以按通用 skills 路径使用。
+oh-story-claudecode 内置适配 Claude Code、Google Antigravity、OpenCode、ZCode、OpenClaw、Codex CLI 和 Reasonix。Codex 会直接扫描仓库内 `.agents/skills` 发现 14 个 skill，用 `$story-setup` 调用；Antigravity 用 `/skills` 或自然语言运行 `story-setup`，它会自动识别当前宿主（`target_cli=antigravity`）；OpenCode 需要 2.x，1.x 加载不了写正文守卫插件；能读取项目文件的 Web AI / Agent 环境也可以按通用 skills 路径使用。
 
 ### 需要 GPU 或自己部署模型吗？
 
@@ -421,15 +350,28 @@ oh-story-claudecode 内置适配 Claude Code、Google Antigravity、OpenCode、Z
 
 ### 每章字数不统一、字数对不上怎么办？
 
-从 v0.7.7 起，长篇正文只用一个机器统计的字数口径：每份细纲必须写明合法的「字数目标」，缺少时会停止而不是回退到 3000；欠字不会自动加戏，超字最多压缩一次。写入后 `check-prose-after-write.sh` 会提醒字数欠账。升级旧项目后重跑 `/story-setup` 并新开会话即可生效。
+从 v0.7.7 起，长篇正文只用一个机器统计的字数口径：每份细纲必须写明合法的「字数目标」，缺少时会停止而不是回退到 3000；欠字不会自动加戏，超字最多压缩一次。字数只由写作流程在交付前统一测量，写后 hook 不再提醒字数欠账。升级旧项目后重跑 `/story-setup` 并新开会话即可生效。
 
 ### 去AI味之后，朱雀等 AI 检测还是判定为 AI 怎么办？
 
-`story-deslop`（`/去AI味`）是写作 lint：它确定性地检测并清除已知的 AI 句式、标点和退化痕迹，目标是读感，不是绕过检测器。朱雀等外部检测只作自测参考，不替代人工读感；oh-story-claudecode 不承诺通过任何 AI 检测。
+`story-deslop`（`/去AI味`）先用本地脚本抓出已知的 AI 高频句式、破折号泛滥和复读截断，再由 Agent 顺着上下文把总结腔、空泛情绪和强行拔高改回具体动作与细节。核心目标是让读者读着顺畅不出戏；朱雀等外部检测工具仅作自测参考。
+具体改法见[去 AI 味改稿指南](https://zenstory.ai/zh/oh-story/revise-ai-prose)，仓库内的规则说明见[去AI味的具体做法](docs/how-to-remove-ai-flavor-from-web-fiction.md)。
 
 ### 已经写了一部分的小说，能导入后继续写吗？
 
-可以。先在写作项目根运行 `/story-setup`，新开或刷新会话后运行 `/story-import`（`/导入小说`）把已有小说反向解析成标准项目结构，再用 `/story-long-write 日更` 或 `/story-long-write 写第N章` 续写。
+可以。先在写作项目根运行 `/story-setup`，新开或刷新会话后运行 `/story-import`（`/导入小说`）把已有书稿反向拆成设定、大纲和追踪文件，核对一遍反推结果，再用 `/story-long-write 写第N章` 续写（N 是导入后的下一章，会先补这一章细纲）；短篇导入后先补完构思再接着写。详见[旧稿导入与续写指南](https://zenstory.ai/zh/oh-story/import-and-continue)（一切以原稿写过的为准，不让模型瞎脑补）。
+
+### 长篇连载怎么避免前后矛盾、忘伏笔或角色未卜先知？
+
+把「作者真相」「读者已知」和「角色当下的认知」分开记录，每章动笔前只带本章用得上的状态与待回收伏笔。三章实操示例见[长篇连载一致性指南](https://zenstory.ai/zh/oh-story/long-novel-continuity)，本仓库的实现机制见[AI 写长篇小说怎么不崩人设：Oh Story 的做法](docs/ai-long-novel-character-consistency.md)。
+
+### 细纲写得很全，为什么成文还是像大纲扩写、干巴巴复述设定？
+
+因为细纲不能只列静态设定，得写清「这一章局面发生了什么变化」——主角想要什么、卡在哪、拿什么破局、付了什么代价，全落到视角人物眼皮底下的动作、对话和当场反应上。拆解示例见[细纲怎么落成正文场面](https://zenstory.ai/zh/oh-story/outline-to-chapter)。
+
+### 怎么让 AI 顺着我的文风写，又不把样章里的人物和剧情串进来？
+
+从你自己的旧作或参考片段里只抽句式节奏、叙述腔调和用词习惯，跟新书的人物设定分开存；样章只学行文味道，不抄原句、也不把旧书设定带进新书。详见[保留个人文风指南](https://zenstory.ai/zh/oh-story/preserve-author-voice)。
 
 ### Windows 上安装报 `ENOENT ... mkdir`，但末尾显示 Done，正常吗？
 
@@ -437,12 +379,31 @@ oh-story-claudecode 内置适配 Claude Code、Google Antigravity、OpenCode、Z
 
 ### 升级到新版本后要做什么？
 
-重跑 `/story-setup` 并新开会话。7 个专业 agent（story-architect、narrative-writer、consistency-checker 等）由 `/story-setup` 写入项目目录，必须先部署再新开会话，多 agent 协作才会生效。
+更新 skill 包后新开会话。若版本更新了项目内的 agents、hooks 或参考资料包，或你更换了编程 Agent，再在项目根重跑 `/story-setup` 并新开会话；具体版本要求见[升级指南](skills/story-setup/UPGRADING.md)。
 
 ### 短篇和长篇的入口有什么区别？
 
 长篇：`/story-long-scan`（扫榜）→ `/story-long-analyze`（拆文）→ `/story-long-write`（写作，含大纲、卷纲、细纲、正文）。短篇：`/story-short-scan` → `/story-short-analyze` → `/story-short-write`。两条线共用 `/story-setup`、`/story-deslop`、`/story-review` 和 `/story-cover`。
 
+## 延伸阅读
+
+- [提示词、技能包、插件与 MCP 怎么分](https://zenstory.ai/zh/oh-story/agent-skills-for-writers) — 网文作者怎么选趁手的 AI 写作工具
+- [导入 10–20 章后接着写](https://zenstory.ai/zh/oh-story/import-and-continue) — 旧稿反推设定与无缝续写实操
+- [分开角色已知、承诺与线索](https://zenstory.ai/zh/oh-story/long-novel-continuity) — 避免长篇连载前后矛盾或角色未卜先知
+- [把细纲要求写成看得见的场面变化](https://zenstory.ai/zh/oh-story/outline-to-chapter) — 细纲怎么写成有画面感的正文冲突
+- [用具体改稿减少“AI 味”](https://zenstory.ai/zh/oh-story/revise-ai-prose) — 删掉总结腔和套话，把戏落回动作与细节
+- [分开文风选择与本书事实](https://zenstory.ai/zh/oh-story/preserve-author-voice) — 让 AI 学你的行文腔调而不串戏
+- [AI 写长篇小说怎么不崩人设：Oh Story 的做法](docs/ai-long-novel-character-consistency.md) — 仓库内文档
+- [去AI味的具体做法](docs/how-to-remove-ai-flavor-from-web-fiction.md) — 仓库内文档
+- [扫榜和拆文的自动化做法](docs/scan-charts-and-deconstruct-bestsellers.md) — 仓库内文档
+- [Claude Code skills for writers](docs/claude-code-skills-for-writers.md) — 仓库内文档（英文）
+- [黄金三章怎么写：网文开头清单与改写示例](docs/web-novel-golden-three-chapters.md) — 仓库内文档
+- [网文断章技巧：章尾钩子怎么写、怎么选](docs/web-novel-chapter-ending-hooks.md) — 仓库内文档
+- [小说细纲怎么写：章节模板与填写范例](docs/novel-chapter-outline-template.md) — 仓库内文档
+- [小说人物设定集怎么整理：角色、时间线与人物已知信息模板](docs/novel-story-bible-template.md) — 仓库内文档
+- [网文大纲怎么写：长篇大纲模板与分卷范例](docs/web-novel-outline-template.md) — 仓库内文档
+- [开源 AI 写小说工具怎么选：10 个项目按使用方式对比](docs/open-source-ai-novel-writing-tools.md) — 仓库内文档
+- [规则怪谈怎么写：规则开始冲突才可怕](docs/rules-horror-writing-guide.md) — 仓库内文档
 
 ## 贡献
 
@@ -454,6 +415,10 @@ oh-story-claudecode 内置适配 Claude Code、Google Antigravity、OpenCode、Z
 - **GitHub Discussions**：[提问 / 求助 / 分享用法](https://github.com/zenstory-ai/oh-story-claudecode/discussions)，方便检索。
 - **GitHub Issues**：[Bug、输出质量 Case、功能请求](https://github.com/zenstory-ai/oh-story-claudecode/issues/new/choose)，请按结构化表单提供复现材料或具体输出证据。
 
+## 贡献者
+
+<a href="https://github.com/zenstory-ai/oh-story-claudecode/graphs/contributors"><img alt="Contributors" src="https://contrib.rocks/image?repo=zenstory-ai/oh-story-claudecode"></a>
+
 ## 致谢
 
 - [LINUX DO - The New Ideal Community](https://linux.do) — 社区支持
@@ -462,13 +427,13 @@ oh-story-claudecode 内置适配 Claude Code、Google Antigravity、OpenCode、Z
 
 ## ZenStory AI 项目
 
-Oh Story 是 [ZenStory AI](https://zenstory.ai) 的一部分——一组开源、面向 agent 的故事创作、改编与生产工具（GitHub 组织：[zenstory-ai](https://github.com/zenstory-ai)）。同组织项目：
+Oh Story 是 [ZenStory AI](https://zenstory.ai/zh) 的一部分——一组开源的 AI 故事创作、改编与生产工具（GitHub 组织：[zenstory-ai](https://github.com/zenstory-ai)）。同组织项目：
 
 | 项目 | 用途 |
 | --- | --- |
 | [oh-story-claudecode](https://github.com/zenstory-ai/oh-story-claudecode) | 网文写作 skill 包（本仓库） |
 | [drama-skills](https://github.com/zenstory-ai/drama-skills) | AI 短剧 / 漫剧创作 skill 合集：剧本、资产、分镜、图片/视频提示词、独立审查 |
-| [novel-to-game](https://github.com/zenstory-ai/novel-to-game) | 面向原著改编、指定运行环境构建与运行证据 QA 的 agent skills |
+| [novel-to-game](https://github.com/zenstory-ai/novel-to-game) | 小说改编游戏 skill 合集：原著拆解、目标运行环境构建与实机运行验收 |
 | [video-recap-skills](https://github.com/zenstory-ai/video-recap-skills) | 将支持的视频文件制作成中文解说，可选导出可编辑的剪映/CapCut 草稿 |
 | [oh-story-dsh](https://github.com/zenstory-ai/oh-story-dsh) | DeepSeek Harness 社区插件，提供小说、短剧、游戏和视频解说工作台 |
 | [zenstory](https://github.com/zenstory-ai/zenstory) | 对话即创作的 AI 小说写作工作台（[app.zenstory.ai](https://app.zenstory.ai)） |

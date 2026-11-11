@@ -15,6 +15,8 @@ NEW_REFERENCES = (
     "analysis-short-mechanics.md",
     "analysis-short-suspense.md",
     "analysis-short-hooks.md",
+    "analysis-characters.md",
+    "analysis-submission.md",
 )
 LEGACY_REFERENCES = (
     "analysis-genre-catalog.md",
@@ -22,6 +24,12 @@ LEGACY_REFERENCES = (
     "analysis-genre-mechanics.md",
     "analysis-suspense.md",
     "analysis-chapter-hooks.md",
+    "analysis-character-basics.md",
+    "analysis-character-design.md",
+    "analysis-character-relations.md",
+    "analysis-reader-profile.md",
+    "analysis-writing-techniques.md",
+    "analysis-paragraph-hooks.md",
 )
 FORBIDDEN = re.compile(
     r"黄金三章|前\s*3\s*章|8\s*节点|五阶段|每章必备|"
@@ -73,7 +81,7 @@ def main() -> int:
             print(f"  {failure}")
         return 1
 
-    print("Short analysis scope: 5 observational rubrics; no legacy long-form playbook tokens")
+    print(f"Short analysis scope: {len(NEW_REFERENCES)} observational rubrics; no legacy long-form playbook tokens")
     return 0
 
 

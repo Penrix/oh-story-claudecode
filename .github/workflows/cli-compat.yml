@@ -7,6 +7,7 @@ on:
       - '.agents/**'
       - '.claude-plugin/**'
       - '.github/workflows/cli-compat.yml'
+      - 'reasonix-plugin.json'
       - 'scripts/**'
       - 'skills/**'
   pull_request:
@@ -14,6 +15,7 @@ on:
       - '.agents/**'
       - '.claude-plugin/**'
       - '.github/workflows/cli-compat.yml'
+      - 'reasonix-plugin.json'
       - 'scripts/**'
       - 'skills/**'
   schedule:
@@ -32,11 +34,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.x'
       - name: Install current Claude Code CLI
@@ -50,11 +52,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.x'
       - name: Install current Codex CLI
@@ -66,15 +68,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.x'
-      - name: Install current OpenCode CLI
-        run: npm install --global opencode-ai@latest
+      # OpenCode 2.x 发布在 @opencode/cli；opencode-ai 停在 1.x，本适配不再支持。
+      - name: Install current OpenCode 2.x CLI
+        run: npm install --global @opencode/cli@latest
       - name: Run real OpenCode CLI adapter test
         run: bash scripts/test-opencode-cli-e2e.sh
       - name: Check generated agent permissions with real tools
@@ -84,12 +87,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          # OpenClaw requires Node 22.19+, 23.11+, or 24+; Node 24 is its default target.
+          # Resolve the latest Node 24 patch for openclaw@latest engine requirements.
           node-version: 24
-      - uses: actions/setup-python@v5
+          check-latest: true
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.x'
       - name: Install current OpenClaw CLI
@@ -98,3 +102,21 @@ jobs:
         env:
           OPENCLAW_REAL_CHECK: '1'
         run: bash scripts/check-openclaw-skills.sh
+
+  reasonix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.x'
+      - name: Install current Reasonix CLI
+        run: npm install --global reasonix@latest
+      - name: Run real Reasonix adapter check
+        env:
+          REASONIX_REAL_CHECK: '1'
+        run: bash scripts/check-reasonix-adapter.sh

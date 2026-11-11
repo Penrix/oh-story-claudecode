@@ -1,3 +1,28 @@
+// 明暗主题只是这台浏览器的阅读偏好：没选过就跟随系统，点过就记住。
+const THEME_KEY = "story_dashboard_theme";
+const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
+let themeChoice = null;
+try {
+  const saved = localStorage.getItem(THEME_KEY);
+  if (saved === "light" || saved === "dark") themeChoice = saved;
+} catch {}
+
+function effectiveTheme() {
+  return themeChoice || (systemDark.matches ? "dark" : "light");
+}
+
+function applyTheme() {
+  if (themeChoice) document.documentElement.dataset.theme = themeChoice;
+  else delete document.documentElement.dataset.theme;
+  const button = document.querySelector("#themeButton");
+  if (!button) return;
+  const label = effectiveTheme() === "dark" ? "切换到浅色" : "切换到深色";
+  button.title = label;
+  button.setAttribute("aria-label", label);
+}
+
+applyTheme();
+
 const state = {
   workspace: null,
   activeView: "libraries",
@@ -36,6 +61,7 @@ const elements = {
   treeLoading: document.querySelector("#treeLoading"),
   fileTree: document.querySelector("#fileTree"),
   refreshButton: document.querySelector("#refreshButton"),
+  themeButton: document.querySelector("#themeButton"),
   mobileBackButton: document.querySelector("#mobileBackButton"),
   editorEmpty: document.querySelector("#editorEmpty"),
   editorWorkspace: document.querySelector("#editorWorkspace"),
@@ -775,6 +801,29 @@ function inlineMarkdown(value) {
     .replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, "<em>$1</em>");
 }
 
+function markdownTableCells(line) {
+  const cells = [];
+  let cell = "";
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === "\\" && (line[i + 1] === "\\" || line[i + 1] === "|")) {
+      // 成对反斜线不转义后面的列分隔符；\| 在普通文字和代码中都是单元格内容。
+      cell += line[i + 1] === "|" ? "|" : "\\\\";
+      i++;
+    } else if (char === "|") {
+      cells.push(cell.trim());
+      cell = "";
+    } else {
+      cell += char;
+    }
+  }
+  if (!cells.length) return null;
+  cells.push(cell.trim());
+  if (!cells[0] && line.trimStart().startsWith("|")) cells.shift();
+  if (!cells.at(-1) && line.trimEnd().endsWith("|")) cells.pop();
+  return cells;
+}
+
 function markdownToSafeHtml(markdown) {
   const lines = escapeHtml(markdown).replaceAll("\r\n", "\n").split("\n");
   const output = [];
@@ -830,7 +879,29 @@ function markdownToSafeHtml(markdown) {
       output.push(`<blockquote data-line="${lineNum}">${inlineMarkdown(line.slice(5))}</blockquote>`);
     } else if (line.trim()) {
       closeList();
-      output.push(`<p data-line="${lineNum}">${inlineMarkdown(line)}</p>`);
+      const header = markdownTableCells(line);
+      const divider = markdownTableCells(lines[i + 1] ?? "");
+      if (header?.length && header.length === divider?.length
+        && divider.every((cell) => /^:?-+:?$/.test(cell))) {
+        const alignments = divider.map((cell) => cell.endsWith(":")
+          ? (cell.startsWith(":") ? "center" : "right") : "left");
+        const tableRow = (cells, tag, sourceLine) => `<tr>${header.map((_, column) =>
+          `<${tag}${tag === "th" ? ' scope="col"' : ""} data-align="${alignments[column]}"${column === 0 ? ` data-line="${sourceLine}"` : ""}>${inlineMarkdown(cells[column] ?? "")}</${tag}>`,
+        ).join("")}</tr>`;
+        output.push(`<div class="preview-table" tabindex="0" role="region" aria-label="表格"><table><thead>${tableRow(header, "th", lineNum)}</thead><tbody>`);
+        i++; // 分隔行只定义列格式，不显示为数据行。
+        while (i + 1 < lines.length) {
+          const nextLine = lines[i + 1];
+          if (/^\s*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|&gt;\s|```)/.test(nextLine)) break;
+          const cells = markdownTableCells(nextLine);
+          if (!cells?.length) break;
+          i++;
+          output.push(tableRow(cells, "td", i + 1));
+        }
+        output.push("</tbody></table></div>");
+      } else {
+        output.push(`<p data-line="${lineNum}">${inlineMarkdown(line)}</p>`);
+      }
     } else {
       closeList();
     }
@@ -1035,6 +1106,16 @@ elements.treeSearch.addEventListener("keydown", (event) => {
 });
 
 elements.refreshButton.addEventListener("click", () => loadWorkspace({ announce: true }));
+
+elements.themeButton.addEventListener("click", () => {
+  themeChoice = effectiveTheme() === "dark" ? "light" : "dark";
+  try {
+    localStorage.setItem(THEME_KEY, themeChoice);
+  } catch {}
+  applyTheme();
+});
+
+systemDark.addEventListener("change", applyTheme);
 elements.mobileBackButton.addEventListener("click", () => {
   document.body.classList.remove("document-open");
   window.requestAnimationFrame(() => elements.treeSearch.focus());

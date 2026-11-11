@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MARKET = "oh-story-skills"
 BUNDLE = f"oh-story@{MARKET}"
 UNRELATED = "unrelated@fixture-other-market"
+CLAUDE_CLI = shutil.which("claude") or "claude"
 
 
 def write_json(path: Path, value: object) -> None:
@@ -38,8 +39,9 @@ def test_scope(scope: str) -> None:
         subprocess.run(["git", "init", "-q", str(workspace)], env=env, check=True)
 
         def cli(*args: str) -> str:
-            result = subprocess.run(["claude", "plugin", *args], cwd=workspace, env=env,
-                                    capture_output=True, text=True, timeout=120, check=False)
+            result = subprocess.run([CLAUDE_CLI, "plugin", *args], cwd=workspace, env=env,
+                                    capture_output=True, text=True, encoding="utf-8", errors="replace",
+                                    timeout=120, check=False)
             assert result.returncode == 0, (args, result.stdout, result.stderr)
             return result.stdout
 
@@ -74,8 +76,11 @@ def test_scope(scope: str) -> None:
         unrelated_path = Path(assert_records({UNRELATED})[0]["installPath"])
 
         shutil.copytree(ROOT / "skills", source / "skills")
-        names = sorted(path.parent.name for path in (source / "skills").glob("*/SKILL.md"))
+        bundle_names = sorted(path.parent.name for path in (source / "skills").glob("*/SKILL.md"))
+        assert len(bundle_names) == 14 and "story-publish" in bundle_names, bundle_names
+        names = [name for name in bundle_names if name != "story-publish"]
         assert len(names) == 13, names
+        shutil.rmtree(source / "skills/story-publish")
         # Reproduce the old public catalog without depending on git history or
         # checking source spelling. Each entry really goes through CLI install.
         write_json(source / ".claude-plugin/marketplace.json", {
@@ -97,6 +102,7 @@ def test_scope(scope: str) -> None:
 
         for filename in ("plugin.json", "marketplace.json"):
             shutil.copy2(ROOT / ".claude-plugin" / filename, source / ".claude-plugin" / filename)
+        shutil.copytree(ROOT / "skills/story-publish", source / "skills/story-publish")
         cli("marketplace", "update", MARKET)
         cli("install", BUNDLE, "--scope", scope)
         version = (ROOT / "skills/story/VERSION").read_text(encoding="utf-8").strip()
@@ -107,12 +113,12 @@ def test_scope(scope: str) -> None:
             installed_root = Path(record["installPath"])
             payload = json.loads((installed_root / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
             assert (payload["name"], payload["version"]) == ("oh-story", expected_version), payload
-            assert sorted(path.parent.name for path in (installed_root / "skills").glob("*/SKILL.md")) == names
+            assert sorted(path.parent.name for path in (installed_root / "skills").glob("*/SKILL.md")) == bundle_names
             # This is public CLI inventory output, not a source-text assertion.
             details = cli("details", BUNDLE)
             skills = re.search(r"^\s*Skills \((\d+)\)\s+([^\n]+)", details, re.M)
-            assert skills and int(skills[1]) == len(names), details
-            assert sorted(re.split(r",\s*", skills[2].strip())) == names, details
+            assert skills and int(skills[1]) == len(bundle_names), details
+            assert sorted(re.split(r",\s*", skills[2].strip())) == bundle_names, details
             for component in ("Agents", "Hooks", "MCP servers", "LSP servers"):
                 assert re.search(rf"^\s*{re.escape(component)} \(0\)\s*$", details, re.M), details
             assert (unrelated_path / "skills/unrelated/SKILL.md").read_text(encoding="utf-8") == unrelated_skill
@@ -136,7 +142,7 @@ def test_scope(scope: str) -> None:
         cli("uninstall", BUNDLE, "--scope", scope, "--keep-data")
         assert_records({UNRELATED})
         assert (unrelated_path / "skills/unrelated/SKILL.md").read_text(encoding="utf-8") == unrelated_skill
-        print(f"PASS: Claude {scope} scope — 13 legacy plugins -> one bundle; 13 skills; update/uninstall; unrelated data preserved", flush=True)
+        print(f"PASS: Claude {scope} scope — 13 legacy plugins -> one bundle; 14 skills; update/uninstall; unrelated data preserved", flush=True)
 
 
 def main() -> None:

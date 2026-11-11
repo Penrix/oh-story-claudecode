@@ -46,11 +46,12 @@ function parseArgs(argv) {
 }
 
 function parseFrontmatter(text, source) {
-  if (!text.startsWith("---\n")) fail(`${source}: missing frontmatter`)
-  const end = text.indexOf("\n---\n", 4)
+  const normalized = text.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n")
+  if (!normalized.startsWith("---\n")) fail(`${source}: missing frontmatter`)
+  const end = normalized.indexOf("\n---\n", 4)
   if (end < 0) fail(`${source}: unterminated frontmatter`)
-  const raw = text.slice(4, end)
-  const body = text.slice(end + 5).replace(/^\s+/, "")
+  const raw = normalized.slice(4, end)
+  const body = normalized.slice(end + 5).replace(/^\s+/, "")
   const data = {}
   const lines = raw.split(/\r?\n/)
   for (let index = 0; index < lines.length; index++) {
@@ -119,13 +120,6 @@ function adaptBody(body, name, tools) {
     adapted = adapted.replace(new RegExp(`\\b${source}\\b`, "g"), targets.join("/"))
   }
 
-  if (!tools.includes("run_command")) {
-    adapted = adapted.replace(
-      "**确定项目根目录：** 执行 `git rev-parse --show-toplevel`，失败则用当前工作目录。以下所有路径均为项目根下的绝对路径。",
-      "**确定项目根目录：** 直接使用宿主交给你的当前工作区/项目根；不要执行 shell。以下所有路径均从该根目录解析。",
-    )
-  }
-
   if (name === "story-researcher") {
     adapted = adapted
       .replace("WebSearch/webReader 作为兜底。", "CDP 不可用时返回结构化缺口，由父会话完成联网检索。")
@@ -147,7 +141,8 @@ function adaptBody(body, name, tools) {
     : ""
 
   return `${adapted.trimEnd()}\n\n---\n\nAntigravity adaptation notes:\n` +
-    `- Call this agent through \`invoke_subagent\` with \`TypeName: "${name}"\`.\n` +
+    `- Call this agent through \`invoke_subagent\` with \`TypeName: "${name}"\`, a concise \`Role\`, and \`Prompt\`; \`invoke_subagent\` runs asynchronously in the background, so deliver the final structured result or receipt back to the parent conversation via \`send_message\` (or final reply) when done.\n` +
+    "- In Antigravity CLI (`agy` / `oneharness`), frontmatter tools `view_file`, `write_to_file`, and `replace_file_content` alias to runtime tool declarations `read_file`, `write_file`, and `edit_file` (with file path argument `Path`). If `find_by_name` or `grep_search` is not exposed in CLI mode, read concrete file paths passed by the parent agent via `read_file` (`view_file`) or use `run_command` only when declared in frontmatter `tools`.\n" +
     "- If the Antigravity runtime does not expose custom subagents, fall back to solo/direct execution and report the fallback.\n" +
     "- Stay within this agent's role boundary; return adjacent work to the parent agent.\n" +
     "- Use only `.agents/skills/story-setup/references/agent-references/`; if it is missing, report an incomplete deployment instead of probing other CLI roots.\n" +

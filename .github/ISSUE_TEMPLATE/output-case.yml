@@ -8,7 +8,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        这里收集可以分析的真实生成案例。请给出必要上下文、实际输出和具体问题；只有“AI 味重”“写得不好”无法进入研发排期。
+        这里收集真实生成案例。请给出必要上下文、实际输出和具体问题。
 
         Issue 是公开的。只提交你有权公开的内容，不要粘贴完整书稿、API Key、Token 或个人信息。
 
@@ -32,6 +32,7 @@ body:
         - ZCode
         - OpenClaw
         - Reasonix
+        - Google Antigravity
         - 通用 Agent / Web AI
         - 其他
     validations:

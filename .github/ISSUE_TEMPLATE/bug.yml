@@ -8,7 +8,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        感谢反馈。请提供最小、可复现的信息；只有“不能用”或一张报错截图通常无法定位问题。
+        请说明失败动作，并提供最小复现步骤与完整错误信息。
 
         如果问题是生成内容的文风、人物、节奏或 AI 味不符合预期，请改用「输出质量 Case」。使用方法和流程疑问请前往 Discussions。
 
@@ -32,6 +32,7 @@ body:
         - ZCode
         - OpenClaw
         - Reasonix
+        - Google Antigravity
         - 通用 Agent / Web AI
         - 其他
     validations:
