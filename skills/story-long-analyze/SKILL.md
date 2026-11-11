@@ -10,6 +10,8 @@ metadata: {"openclaw":{"source":"https://github.com/zenstory-ai/oh-story-claudec
 
 **核心信念：看懂别人的爆款，才能写出自己的爆款。**
 
+**情绪提炼必读**：开始 Stage 1 黄金三章、Stage 2 逐章摘要或 Stage 3 聚合情绪之前，完整读取 [references/reader-emotion.md](references/reader-emotion.md)。拆文先记录真实事件，再提炼读者获得的感觉、感觉产生的条件和沿阅读时间的变化。不得把剧情推进、角色自己的情绪或固定爽点公式冒充读者情绪。并行 chapter-extractor 与 solo/direct 使用同一规则；传给 agent 的任务要求中必须明确“按原文事实判断读者感觉及其变化，不统一套缺口→加压→爆发”。
+
 ---
 
 > Agent 兼容性：只检查当前运行时的 canonical 目录：Claude `.claude/agents/{agent}.md`、OpenCode `.opencode/agents/{agent}.md`、Codex `.codex/agents/{agent}.toml`、Antigravity `.agents/agents/agent-name/agent.md`（`agent-name` 为目标 agent 名），不得因其他端文件存在而误判。Codex 使用同名 `agent_type`；Antigravity 使用 `invoke_subagent` + `TypeName`。对应运行时未暴露 custom-agent registry / `invoke_subagent` 或返回未知 agent 时，必须降级 solo/direct。检测到 `.zcode/` 时同样直接 solo/direct，因为 ZCode 3.3.4 不执行项目 custom agents；报告 `Fallback: project custom agents unavailable -> solo`。Claude/OpenCode 兼容面保留 `subagent_type`。
@@ -315,6 +317,7 @@ Stage 3-5 分块见 [material-decomposition.md](references/material-decompositio
 | 文件 | 何时加载 |
 |------|----------|
 | [references/output-templates.md](references/output-templates.md) | 管道全程：各 Stage 输出模板 + 快速预览报告模板 + `剧情/节奏.md` / `剧情/情绪模块.md` 模板 + 通用速查表 |
+| [references/reader-emotion.md](references/reader-emotion.md) | Stage 1-3：从原文拆出情绪质地、情绪指向和阅读中的变化；区分故事事实与读者感受 |
 | [references/material-decomposition.md](references/material-decomposition.md) | Stage 2-5：素材拆解方法论 + 质量阈值 + 分块策略；Stage 6 另见文风资料 |
 | [references/pipeline-ops.md](references/pipeline-ops.md) | 管道运维：_progress.md 模板、错误处理、恢复机制操作步骤 |
 | [references/deconstruction-notes.md](references/deconstruction-notes.md) | 拆书方法+影视拆解+抽象拆解法+题材实战 |
