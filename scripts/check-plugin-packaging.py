@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the repository's Claude Code and ZCode plugin packaging contract."""
+"""Validate the repository's Claude Code, ZCode, and Reasonix plugin packaging contract."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from typing import Any, TypedDict
 
 
 PLUGIN_NAME = "oh-story"
+REASONIX_API_VERSION = "reasonix.io/plugin/v2"
 CLAUDE_CATALOG_NAME = "oh-story-skills"
 ZCODE_CATALOG_NAME = "oh-story-zcode"
 COMPONENT_KEYS = ("skills", "agents", "hooks", "commands", "mcpServers", "lspServers")
@@ -25,6 +26,7 @@ EXPECTED_SKILLS = frozenset(
         "story-long-analyze",
         "story-long-scan",
         "story-long-write",
+        "story-publish",
         "story-review",
         "story-setup",
         "story-short-analyze",
@@ -115,7 +117,7 @@ def discover_skills(root: Path, findings: list[Finding]) -> list[str]:
             findings,
             "root-skills",
             "skills",
-            f"expected the 13 root skills; missing={missing}, unexpected={unexpected}",
+            f"expected the {len(EXPECTED_SKILLS)} root skills; missing={missing}, unexpected={unexpected}",
         )
     return skills
 
@@ -246,6 +248,47 @@ def validate_native_plugin(
         )
 
 
+def validate_reasonix_plugin(
+    plugin: dict[str, Any] | None,
+    relative: str,
+    version: str | None,
+    findings: list[Finding],
+) -> None:
+    if plugin is None:
+        return
+    if plugin.get("apiVersion") != REASONIX_API_VERSION:
+        add(
+            findings,
+            "reasonix-api-version",
+            relative,
+            f"apiVersion must be {REASONIX_API_VERSION!r}",
+        )
+    if plugin.get("name") != PLUGIN_NAME:
+        add(findings, "native-plugin-name", relative, f"name must be {PLUGIN_NAME!r}")
+    if version is not None and plugin.get("version") != version:
+        add(
+            findings,
+            "native-plugin-version",
+            relative,
+            f"version must equal VERSION ({version})",
+        )
+    if plugin.get("skills") != "skills":
+        add(
+            findings,
+            "reasonix-skills-root",
+            relative,
+            "Reasonix native plugin skills must be exactly 'skills'",
+        )
+    description = plugin.get("description")
+    if not isinstance(description, str) or not description.strip():
+        add(
+            findings,
+            "reasonix-description",
+            relative,
+            "Reasonix native plugin description must be a non-empty string",
+        )
+
+
 def validate(root: Path) -> Report:
     findings: list[Finding] = []
     version = load_version(root, findings)
@@ -254,6 +297,7 @@ def validate(root: Path) -> Report:
     zcode_catalog_path = "marketplace.json"
     claude_plugin_path = ".claude-plugin/plugin.json"
     zcode_plugin_path = ".zcode-plugin/plugin.json"
+    reasonix_plugin_path = "reasonix-plugin.json"
 
     validate_catalog(
         load_json(root, claude_catalog_path, findings),
@@ -284,6 +328,12 @@ def validate(root: Path) -> Report:
         version,
         findings,
         claude=False,
+    )
+    validate_reasonix_plugin(
+        load_json(root, reasonix_plugin_path, findings),
+        reasonix_plugin_path,
+        version,
+        findings,
     )
     return {
         "ok": not findings,

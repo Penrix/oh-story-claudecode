@@ -9,19 +9,6 @@ if [ -z "$REPO_ROOT" ]; then
 fi
 
 SCRIPT="$REPO_ROOT/skills/story-deslop/scripts/check-ai-patterns.js"
-DETECTOR_COPIES=(
-  "$REPO_ROOT/skills/story-deslop/scripts/check-ai-patterns.js"
-  "$REPO_ROOT/skills/story-long-write/scripts/check-ai-patterns.js"
-  "$REPO_ROOT/skills/story-review/scripts/check-ai-patterns.js"
-  "$REPO_ROOT/skills/story-short-write/scripts/check-ai-patterns.js"
-)
-for detector_copy in "${DETECTOR_COPIES[@]}"; do
-  node --check "$detector_copy" >/dev/null
-  cmp -s "$SCRIPT" "$detector_copy" || {
-    echo "FAIL: detector copy drifted from story-deslop source: $detector_copy" >&2
-    exit 1
-  }
-done
 TMP_DIR="$(mktemp -d)"
 
 cleanup() {
@@ -92,25 +79,9 @@ const expected = [
   '不是普通的粥！ 是药',
 ];
 
-// Natural prose that MUST NOT be flagged: the trailing 是 of a conjunction
-// (只是/可是/于是/倒是…) after a separator is not a positive copula (issue #166
-// false-positive class). “是不是”/“也不是” second-negation must also stay silent.
-const forbidden = [
-  '只是累了',
-  '可是没人发现',
-  '于是答应了',
-  '倒是有点担心',
-  // either-or「不是A就是B / 也是B」与句尾反问「…，是吗 / 是吧 / 是嘛」不是否定后翻转。
-  '哭就是',
-  '真的就是',
-  '是吗',
-  '是吧',
-  '是嘛',
-  '是的',
-  '是啊',
-  '是呢',
-];
-
+// Natural prose that MUST NOT be flagged (conjunction 只是/可是/于是/倒是, either-or
+// 不是A就是B, tag questions 是吗/是吧/是嘛/是的/是啊/是呢, issue #166) is guarded by the
+// exact finding count below: any extra hit breaks it.
 if (report.findings.length !== expected.length) {
   throw new Error(`expected ${expected.length} findings, got ${report.findings.length}: ${JSON.stringify(excerpts)}`);
 }
@@ -121,11 +92,6 @@ for (const excerpt of expected) {
   }
 }
 
-for (const marker of forbidden) {
-  if (excerpts.some((excerpt) => excerpt.includes(marker))) {
-    throw new Error(`false positive: conjunction "${marker}" was flagged; got ${JSON.stringify(excerpts)}`);
-  }
-}
 NODE
 
 echo "AI pattern detector regression tests passed."
@@ -142,8 +108,6 @@ LONG_PARA="${LONG_PARA}终于在尽头停下，盯着那点暗红看了很久。
 {
   # 6 句连续短叙述句 → 碎句号
   printf '%s\n' '他站起来。' '他走过去。' '门开了。' '风进来。' '他停住。' '心一沉。'
-  # 6 句对话短句 → 必须不报碎句号（成片短句是对话/弹幕的正常形态）
-  printf '%s\n' '“这真的没问题。”' '“一点也不难。”' '“我信你。”' '“你别紧张。”' '“好。”' '“嗯。”'
   # 破折号 → em-dash（按功能改写，不机械替换）
   printf '%s\n' '她借着月光看清了桌上那张纸的边角——那是一张旧纸。'
   # 单段超长 → long-paragraph
@@ -165,15 +129,15 @@ const fs = require('fs');
 const report = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const counts = report.findings.reduce((m, f) => ((m[f.type] = (m[f.type] || 0) + 1), m), {});
 
-// Exactly one of each new prose type, nothing else. The 6 dialogue lines must NOT
-// trip 碎句号 (成片短句是对话/弹幕的正常形态 — only narrative runs count).
+// Exactly one of each new prose type, nothing else. Quoted short lines not
+// counting toward 碎句号 is owned by FIXTURE4 below.
 if (report.findings.length !== 3) {
   throw new Error(`expected 3 prose findings, got ${report.findings.length}: ${JSON.stringify(report.findings.map((f) => `${f.type}@${f.line}`))}`);
 }
 for (const type of ['period-stutter', 'em-dash', 'long-paragraph']) {
   if (counts[type] !== 1) throw new Error(`expected exactly 1 ${type}, got ${counts[type] || 0}`);
 }
-// 碎句号 must flag the narrative block (line 1), not the dialogue cluster (lines 7-12).
+// 碎句号 must flag the narrative block (line 1).
 const stutter = report.findings.find((f) => f.type === 'period-stutter');
 if (stutter.line !== 1) {
   throw new Error(`period-stutter should start at the narrative block (line 1), got line ${stutter.line}`);
@@ -912,6 +876,79 @@ NODE
 
 echo "overcompressed-prose-tic (过度精炼短段) regression tests passed."
 
+# --- 密度类规则的引号豁免：台词里塞满触发词也不计入。每条用例的引号内文本
+# 都复用上面正例的原句，引号若被计入就足以命中对应规则；这里断言一条都不报。---
+node - "$SCRIPT" "$TMP_DIR" <<'NODE'
+const fs = require('fs');
+const path = require('path');
+const { spawnSync } = require('child_process');
+const [script, tmpDir] = process.argv.slice(2);
+const say = (lines) => lines.map((line) => `他说：“${line}”`);
+const repeat = (n, line) => Array.from({ length: n }, () => line);
+const cases = [
+  ['micro-action-tic', say([
+    '父亲的手停了一下。绳在铁环上松了半圈。',
+    '他把绳拉紧，在秆子上勒了一道印。',
+    '他拍了两下，手背上沾了叶子。',
+    '母亲切了一阵，停了。锅铲刮了一下锅底。',
+    '他把线头绕了一下，又攥了一下石头。',
+  ])],
+  ['stock-reaction-tic', say([
+    '指尖在窗台上轻轻叩了一下。',
+    '她望向窗外别处，指尖却在袖口里攥紧了一下。',
+    '徐管事的语气平静得像在念一份货单。',
+    '他扶着栏杆的那只手，指节泛白。',
+    '指尖在窗棂上轻轻叩了一下。',
+  ])],
+  ['abstract-summary-tic', say([
+    '从这一刻开始，所有安排都被推到台前。',
+    '命运像早已布好的棋局，把他推向那扇门。',
+    '他生出前所未有的决意。',
+    '属于他的反击，才刚刚开始。',
+  ])],
+  ['action-list-tic', say([
+    '她伸手拿起桌上的杯子，取过旁边的药瓶，拧开瓶盖，倒出两片药，端起水杯，仰头咽下去，放下杯子，推开椅子，转身走到门口。',
+  ])],
+  ['cliche-density-tic', say([
+    '夜色静静笼罩着城市，远处霓虹隐约闪烁。',
+    '林澈心中涌起一股说不清的情绪，仿佛某种预兆正在缓缓靠近。',
+    '苏晚眼中闪过一丝复杂的神色，嘴角勾起一抹若有若无的笑意。',
+    '她语气不容置疑，声音里透着不易察觉的冷意。',
+    '林澈深吸一口气，淡淡开口，语气平静无波。',
+    '苏晚指节泛白，目光锐利，沉默在两人之间蔓延。',
+  ])],
+  ['metaphor-density-tic', say([
+    '门口的雨还没停。路灯像泡在脏水里的眼珠，光晕晃得人心里发毛。',
+    '保安室的玻璃好像蒙了一层油，谁的脸贴上去都发灰。',
+    '人群挤在台阶下，仿佛一团被水浇透的纸。',
+    '周砚的声音像是老旧电梯里的报站声，卡在喉咙口。',
+    '公告牌上的红字如同钉子，一颗一颗往墙上扎。',
+    '孩子的哭声像从楼缝里漏出来的风，细得让人背后发凉。',
+    '胸牌亮起来，像一块透明的旧手机屏。',
+  ])],
+  ['reasoning-chain-tic', say([
+    '他知道眼下最重要的任务是稳住人群，避免恐慌继续扩大。他也明白，如果业主继续围在北门，公共区域秩序会很快失控。这意味着每一句广播都必须谨慎，因为错误指令可能带来新的死亡。',
+    '真正的问题在于，他没有完整规则，却必须在规则惩罚之前做出判断。在这种情况下，任何安慰都可能变成误导，任何沉默也可能被理解成默认。他需要先确认谁还在外面，再确认哪些楼栋还能进门。只有这样，他才有可能把混乱压回可控范围。',
+    '他清楚自己只是实习物业，但现在系统把责任交给了他。也就是说，他必须承担一个原本不该由他承担的结果。他需要保持冷静，需要筛选信息，需要判断每个人的风险等级。想到这里，他终于意识到，今晚考验的是信息不足时的决策能力。',
+  ])],
+  ['overcompressed-prose-tic', say([
+    ...repeat(60, '周砚抬头。'),
+    ...repeat(40, '灰雾贴住红线外侧，北门灯光晃成一团冷斑，脚步声压回门岗亭前。'),
+  ])],
+];
+const failures = [];
+for (const [type, lines] of cases) {
+  const file = path.join(tmpDir, `fixture-quoted-${type}.md`);
+  fs.writeFileSync(file, lines.join('\n\n') + '\n');
+  const run = spawnSync('node', [script, '--json', file], { encoding: 'utf8' });
+  const hits = JSON.parse(run.stdout).findings.filter((f) => f.type === type);
+  if (hits.length) failures.push(`${type}: ${JSON.stringify(hits)}`);
+}
+if (failures.length) throw new Error('引号内触发词不应计入密度规则:\n' + failures.join('\n'));
+NODE
+
+echo "density-rule quote exemption regression tests passed."
+
 # --- issue #205：低连接密度 + 缺中长句（R10 保守 advisory，单低连接不够）---
 FIXTURE27="$TMP_DIR/fixture-low-connective-density.md"
 : > "$FIXTURE27"
@@ -1223,7 +1260,7 @@ node - "$OUT" <<'NODE'
 const fs = require('fs');
 const r = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const ts = r.findings.filter((f) => f.type === 'trailer-summary');
-if (ts.length < 2) throw new Error('章尾「这一切都结束了」+「这一夜注定」应各报一条: ' + JSON.stringify(ts));
+if (ts.length !== 2) throw new Error('章尾「这一切都结束了」+「这一夜注定」应各报一条: ' + JSON.stringify(ts));
 if (ts.some((f) => f.severity !== 'blocking')) throw new Error('trailer-summary 应为 blocking: ' + JSON.stringify(ts));
 NODE
 [ "$trailer_sum_blk" -eq 1 ] || { echo "FAIL: trailer-summary --fail-on=blocking 应退出 1，实际 $trailer_sum_blk" >&2; exit 1; }
@@ -1259,3 +1296,145 @@ if (ts.length !== 0) throw new Error('裸认知句/时间跳转不应报 trailer
 NODE
 
 echo "trailer-summary (章尾状态总结体) regression tests passed."
+
+# ── HTML 注释不是正文 ──────────────────────────────────────────────────────────
+# 「去味:跳过」豁免标记 `<!-- 去味:跳过 -->` 是正文里的元信息。检测器曾把 `<!--` / `-->`
+# 当成两处 blocking em-dash，storyctl chapter check 因此永远不过、豁免章永远提交不了。
+# 整行注释、行内注释、跨行注释都不参与扫描；注释外的叙述照常检测，列号不漂移。
+FIXTURE_HTML_COMMENT="$TMP_DIR/fixture-html-comment.md"
+printf '%s\n' \
+  '# 第3章 夜路' \
+  '<!-- 去味:跳过 -->' \
+  '<!-- 去味：跳过 -->' \
+  '他推门出去，雨还在下。' \
+  '她把伞递给他。<!-- 作者注：这里--以后再改 -->他没接。' \
+  '<!--' \
+  '多行注释里的破折号——不算，声音不大，却不算。' \
+  '-->' \
+  '他回头看了一眼——门已经关了。' > "$FIXTURE_HTML_COMMENT"
+set +e
+node "$SCRIPT" --json --fail-on=blocking "$FIXTURE_HTML_COMMENT" > "$OUT"
+html_status=$?
+set -e
+node - "$OUT" <<'NODE'
+const fs = require('fs');
+const r = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const dashes = r.findings.filter((f) => f.type === 'em-dash');
+const onComment = r.findings.filter((f) => [2, 3, 6, 7, 8].includes(f.line) || (f.line === 5 && f.type === 'em-dash'));
+if (onComment.length) throw new Error('HTML 注释内容不应被扫描: ' + JSON.stringify(onComment));
+if (dashes.length !== 1 || dashes[0].line !== 9 || dashes[0].column !== 8) {
+  throw new Error('注释外的破折号仍要报且列号不漂移（第9行第8列）: ' + JSON.stringify(dashes));
+}
+NODE
+[ "$html_status" -eq 1 ] || { echo "FAIL: 注释外仍有破折号，--fail-on=blocking 应退出 1，实际 $html_status" >&2; exit 1; }
+
+# 只有豁免标记与干净正文的章：--fail-on=blocking 必须退出 0（chapter check 能过）。
+FIXTURE_MARKER_ONLY="$TMP_DIR/fixture-marker-only.md"
+printf '%s\n' '# 第3章 夜路' '<!-- 去味:跳过 -->' '' '他推门出去，雨还在下。' '她把伞递给他，他没接。' > "$FIXTURE_MARKER_ONLY"
+set +e
+node "$SCRIPT" --json --fail-on=blocking "$FIXTURE_MARKER_ONLY" > "$OUT"
+marker_status=$?
+set -e
+[ "$marker_status" -eq 0 ] || { echo "FAIL: 只含豁免标记的干净章被判 blocking（exit $marker_status）：$(cat "$OUT")" >&2; exit 1; }
+
+# 漏写 `-->` 的注释到文末都没闭合：不能把后面整章藏起来，按正文扫描（`<!--` 本身不报）。
+FIXTURE_UNCLOSED_COMMENT="$TMP_DIR/fixture-unclosed-comment.md"
+printf '%s\n' '# 第1章' '<!-- 作者备注' '这不是夸奖，而是命令。' '声音不大，却带着狠劲。' '他把门带上。' > "$FIXTURE_UNCLOSED_COMMENT"
+set +e
+node "$SCRIPT" --json --fail-on=blocking "$FIXTURE_UNCLOSED_COMMENT" > "$OUT"
+unclosed_status=$?
+set -e
+node - "$OUT" <<'NODE'
+const fs = require('fs');
+const r = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const types = r.findings.map((f) => `${f.line}:${f.type}`);
+for (const want of ['3:not-is-comparison', '4:voice-contrast']) {
+  if (!types.includes(want)) throw new Error('未闭合注释之后的正文必须照常扫描，缺 ' + want + ': ' + JSON.stringify(types));
+}
+if (r.findings.some((f) => f.line === 2)) throw new Error('`<!--` 本身不应报: ' + JSON.stringify(types));
+NODE
+[ "$unclosed_status" -eq 1 ] || { echo "FAIL: 未闭合注释藏住了 blocking 句式（exit $unclosed_status）" >&2; exit 1; }
+
+echo "HTML comment (去味:跳过 豁免标记) regression tests passed."
+
+# ── review 分类契约：每条 finding 都带 review=semantic|mechanical ────────────────
+# 下游按 review 分流：mechanical 由写作端直接清，semantic 交语义审查判断是否保留。
+# 源码里出现的每个 finding type 都必须在分类表里（新增规则不许静默漏分类），分类表不许有
+# 源码里不存在的死条目；blocking 规则只能是 mechanical（blocking = 不需判断、必须清零）。
+node "$SCRIPT" --list-review-classes > "$TMP_DIR/review-classes.json"
+node - "$SCRIPT" "$TMP_DIR/review-classes.json" <<'NODE'
+const fs = require('fs');
+const source = fs.readFileSync(process.argv[2], 'utf8');
+const table = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
+const emitted = new Set([...source.matchAll(/\btype: '([a-z-]+)'/g)].map((m) => m[1]));
+if (emitted.size < 20) throw new Error('源码里抽到的 finding type 太少，抽取式可能失效: ' + [...emitted]);
+const classified = new Set(Object.keys(table));
+const missing = [...emitted].filter((t) => !classified.has(t));
+const dead = [...classified].filter((t) => !emitted.has(t));
+if (missing.length) throw new Error('这些 finding type 没有 review 分类: ' + missing.join(', '));
+if (dead.length) throw new Error('review 分类表有源码里不存在的类型: ' + dead.join(', '));
+for (const [type, cls] of Object.entries(table)) {
+  if (cls !== 'semantic' && cls !== 'mechanical') throw new Error(`${type} 的 review 值非法: ${cls}`);
+}
+for (const t of ['stock-reaction-tic', 'formulaic-parallelism', 'reasoning-chain-tic', 'abstract-summary-tic']) {
+  if (table[t] !== 'semantic') throw new Error(`${t} 需要语义判断，应为 semantic`);
+}
+for (const t of ['em-dash', 'cliche-density-tic', 'not-is-comparison']) {
+  if (table[t] !== 'mechanical') throw new Error(`${t} 是确定性表面形态，应为 mechanical`);
+}
+NODE
+
+# 运行期：一份多规则 fixture 的每条 finding 都带合法 review，原有字段不变，blocking 全是 mechanical。
+FIXTURE_REVIEW="$TMP_DIR/fixture-review.md"
+{
+  printf '%s\n' '他不是冷漠，而是绝望。' '声音不高，第一句却稳稳压住了整个大厅。' '没有伴奏，没有和声，没有提词器。'
+  printf '%s\n' '是真嗓子，不是修音修出来的。' '他回头看了一眼——门已经关了。'
+  printf '%s\n' '她指尖微微一颤。' '他指节泛白，攥紧了拳头。' '她眼眶发红。' '他喉结滚了滚。' '她抿了下唇。'
+  printf '%s\n' '一。二。三。四。五。六。七。'
+  printf '%s\n' '没人知道，这才刚刚开头。'
+} > "$FIXTURE_REVIEW"
+set +e
+node "$SCRIPT" --json "$FIXTURE_REVIEW" > "$OUT"
+set -e
+node - "$OUT" <<'NODE'
+const fs = require('fs');
+const r = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+if (r.findings.length < 6) throw new Error('多规则 fixture 命中太少，测试失去意义: ' + JSON.stringify(r.findings));
+const types = new Set(r.findings.map((f) => f.type));
+for (const need of ['not-is-comparison', 'em-dash', 'stock-reaction-tic', 'trailer-ending']) {
+  if (!types.has(need)) throw new Error('fixture 应命中 ' + need + ': ' + [...types]);
+}
+for (const f of r.findings) {
+  for (const key of ['file', 'line', 'column', 'type', 'severity', 'message', 'excerpt']) {
+    if (!(key in f)) throw new Error(`finding 缺原有字段 ${key}: ` + JSON.stringify(f));
+  }
+  if (f.review !== 'semantic' && f.review !== 'mechanical') throw new Error('finding 缺 review 分类: ' + JSON.stringify(f));
+  if (f.severity === 'blocking' && f.review !== 'mechanical') throw new Error('blocking finding 必须是 mechanical: ' + JSON.stringify(f));
+}
+NODE
+
+echo "review classification (semantic/mechanical) contract tests passed."
+
+# --- 否定对偶（「没A，也没B」式叙述过密=英文式节奏）---
+FIXTURE_NEG="$TMP_DIR/fixture-negation-pair.md"
+printf '%s\n' \
+  '他没说让她住，也没说不让，自己进里间去了。' \
+  '她没碰那排蒜，也没叫他。' \
+  '外公没抬头，她也没吭声。' \
+  '"你不去，我也不去。"她笑着说。' > "$FIXTURE_NEG"
+set +e
+node "$SCRIPT" --json "$FIXTURE_NEG" > "$OUT"
+set -e
+node - "$OUT" <<'NODE'
+const fs = require('fs');
+const r = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const np = r.findings.filter((f) => f.type === 'negation-pair-tic');
+if (np.length !== 1) throw new Error('叙述里 3 处「没A，也没B」应报 1 条 negation-pair-tic: ' + JSON.stringify(r.findings.map((f) => f.type)));
+if (np[0].severity !== 'advisory' || np[0].review !== 'semantic') throw new Error('negation-pair-tic 应为 advisory/semantic');
+NODE
+printf '%s\n' '他没说话，转身出门去了。' '"你不去，我也不去。"她说。' '"没钱，也没票。"他说。' > "$FIXTURE_NEG"
+set +e
+node "$SCRIPT" --json "$FIXTURE_NEG" > "$OUT"
+set -e
+node -e "const r=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));if(r.findings.some(f=>f.type==='negation-pair-tic'))throw new Error('台词里的否定对偶与单处否定不应报')" "$OUT"
+echo "negation-pair-tic regression tests passed."

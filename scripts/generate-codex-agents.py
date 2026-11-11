@@ -184,7 +184,9 @@ def render_file(src: Path) -> tuple[str, str]:
     return f"{name}.toml", "\n".join(out) + "\n"
 
 
-def publish_rendered(rendered: dict[str, str], dst_dir: Path) -> list[Path]:
+def publish_rendered(
+    rendered: dict[str, str], dst_dir: Path, *, pattern: str = "*.toml"
+) -> list[Path]:
     """Publish generated files with rollback while leaving the directory present."""
     if dst_dir.is_symlink():
         raise ValueError(f"destination directory must not be a symlink: {dst_dir}")
@@ -203,7 +205,7 @@ def publish_rendered(rendered: dict[str, str], dst_dir: Path) -> list[Path]:
             with (staging / filename).open("w", encoding="utf-8", newline="\n") as handle:
                 handle.write(output)
 
-        existing = sorted(dst_dir.glob("*.toml"))
+        existing = sorted(dst_dir.glob(pattern))
         for path in existing:
             if path.is_dir() and not path.is_symlink():
                 raise IsADirectoryError(f"generated target is a directory: {path}")
@@ -224,7 +226,7 @@ def publish_rendered(rendered: dict[str, str], dst_dir: Path) -> list[Path]:
             # partial commit. Files present in the backup are overwritten in
             # place; only outputs that were absent before the commit are removed.
             restore_names = {path.name for path in backup.iterdir()}
-            for current in list(dst_dir.glob("*.toml")):
+            for current in list(dst_dir.glob(pattern)):
                 if current.is_dir() and not current.is_symlink():
                     continue
                 if current.name in restore_names:

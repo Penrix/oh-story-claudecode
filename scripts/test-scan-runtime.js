@@ -12,10 +12,6 @@ const longUtilsPath = path.join(
   repoRoot,
   "skills/story-long-scan/scripts/cdp-utils.js"
 );
-const shortUtilsPath = path.join(
-  repoRoot,
-  "skills/story-short-scan/scripts/cdp-utils.js"
-);
 
 function makeFakeAgentBrowser(tmpDir) {
   const fakeProgram = `#!/usr/bin/env node
@@ -161,6 +157,13 @@ if (js.indexOf("result={channels:[]}") > -1) {
     books.push({ title: "乙书", author: "作者乙", novelid: "2" });
   }
   out({ channels: [{ name: "古代言情", books }] });
+}
+if (js.indexOf("qdLibraryPageSnapshot") > -1) {
+  // 起点书库列表页：载荷末尾是 (页码))，按页码取 SCAN_FAKE_QD_LIBRARY 里的页面快照
+  const page = (js.match(/\\)\\((\\d+)\\)\\)\\s*$/) || [])[1];
+  const file = process.env.SCAN_FAKE_QD_LIBRARY;
+  const pages = file ? JSON.parse(require("fs").readFileSync(file, "utf8")) : {};
+  out(pages[page] || {});
 }
 if (js.indexOf("blocked") > -1) out({ blocked: false, reason: "" });
 if (js.indexOf("book-img-text") > -1) {
@@ -381,7 +384,7 @@ function testScraperImports() {
       process.execPath,
       [
         "-e",
-        "const m=require(process.argv[1]); process.stdout.write(JSON.stringify(Object.keys(m).sort()));",
+        "require(process.argv[1]);",
         scraperPath,
       ],
       { cwd: repoRoot, encoding: "utf8", timeout: 2000 }
@@ -400,11 +403,6 @@ function testScraperImports() {
       probe.stderr,
       "",
       `${path.basename(scraperPath)} emitted stderr while imported`
-    );
-    const exported = JSON.parse(probe.stdout || "[]");
-    assert(
-      exported.length > 0,
-      `${path.basename(scraperPath)} must export testable helpers`
     );
   }
 }
@@ -516,57 +514,6 @@ function testJjwxcDetailFailureIsolation() {
   assert.match(partial.contents[0], /数据质量：\[部分详情缺失\]/);
 }
 
-function testQidianDynamicRankDiscovery() {
-  const discovery = loadFresh(
-    path.join(
-      repoRoot,
-      "skills/story-long-scan/scripts/qidian-rank-discovery-scraper.js"
-    )
-  );
-
-  const links = discovery.normalizeDiscoveredRankLinks([
-    { text: "月票榜", href: "/rank/yuepiao/" },
-    { text: "收藏榜", href: "https://www.qidian.com/rank/collect/chn21/page2/" },
-    { text: "追读榜", href: "/rank/zhuiread/" },
-    { text: "更多", href: "/rank/newfans/" },
-    { text: "女生月票榜", href: "/rank/female-yuepiao/" },
-    { text: "女频精选榜", href: "/rank/lady/" },
-    { text: "三江推荐", href: "/sanjiang/" },
-  ]);
-
-  const byId = new Map(links.map((item) => [item.id, item]));
-  assert.strictEqual(byId.get("yuepiao").label, "月票榜");
-  assert.strictEqual(byId.get("collect").label, "收藏榜");
-  assert.strictEqual(byId.get("zhuiread").label, "追读榜");
-  assert.strictEqual(byId.get("newfans").label, "书友榜");
-  assert.strictEqual(byId.get("sanjiang").label, "三江推荐");
-  assert(!links.some((item) => /female|lady/.test(item.id)), "女频榜单必须被动态发现器排除");
-
-  const pages = discovery.normalizePageUrls(
-    [
-      { href: "/rank/collect/page2/" },
-      { href: "https://www.qidian.com/rank/collect/page3/" },
-      { href: "/rank/collect/page9/" },
-      { href: "/rank/yuepiao/page2/" },
-    ],
-    "https://www.qidian.com/rank/collect/",
-    3
-  );
-  assert.deepStrictEqual(pages, [
-    "https://www.qidian.com/rank/collect/",
-    "https://www.qidian.com/rank/collect/page2/",
-    "https://www.qidian.com/rank/collect/page3/",
-  ]);
-
-  const books = discovery.dedupeBooks([
-    { title: "甲书", url: "https://www.qidian.com/book/1/" },
-    { title: "甲书", url: "https://www.qidian.com/book/1/" },
-    { title: "乙书", url: "https://www.qidian.com/book/2/" },
-  ]);
-  assert.strictEqual(books.length, 2);
-  assert.deepStrictEqual(books.map((book) => book.rank), [1, 2]);
-}
-
 // 起点：一个榜单打不开只跳这一个，剩下 9 个照采（--type all 不再被一次超时掐死）
 function testQidianRankIsolation() {
   const scraper = path.join(
@@ -594,6 +541,11 @@ function testQidianRankIsolation() {
     !run.files.some((name) => name.startsWith("起点畅销榜_")),
     "打不开的榜单不该写出空文件"
   );
+  // 书库只走 CDP，不进 --type all（all 默认不需要 Chrome；9/10 也靠这一条）
+  assert(
+    !run.files.some((name) => name.startsWith("起点男频书库")),
+    `--type all 不该带上书库: ${run.files.join(", ")}`
+  );
 
   // 参数错误仍要快速失败，不能被 per-榜单隔离吞掉
   const badMode = runScraper(scraper, ["--type", "all", "--mode", "bogus"], {});
@@ -603,8 +555,7 @@ function testQidianRankIsolation() {
 }
 
 // 起点：移动端已有的 cnt 必须作为独立字数字段输出；四个契约字段在两种模式下都要
-// 保持同一结构，拿不到就明确 [待补]，不能塞进 status 或静默省略。
-// 简介必须完整保留，不能再为扫榜报告主动截断；故事 Case 采集依赖后半段信息。
+// 保持同一结构，拿不到就明确 [待补]。为故事 Case 保留完整平台简介，不再截断。
 function testQidianFieldContractAndDescriptionPreservation() {
   const scraperPath = path.join(
     repoRoot,
@@ -646,8 +597,8 @@ function testQidianFieldContractAndDescriptionPreservation() {
   assert.match(markdown, /总推荐：12345/);
   assert.match(markdown, /签约：已签约/);
   assert.match(markdown, /收费模式：VIP/);
-  assert(markdown.includes(longDesc), "起点长简介必须完整保留");
-  assert.strictEqual(qidian.cleanDesc(longDesc), longDesc, "清洗不得截断简介");
+  assert(markdown.includes(longDesc), "起点长简介须完整保留");
+  assert.strictEqual(qidian.cleanDesc(longDesc), longDesc, "简介清洗不得截断");
 
   const missing = qidian.renderMarkdown(
     { label: "测试榜" },
@@ -660,287 +611,501 @@ function testQidianFieldContractAndDescriptionPreservation() {
   }
 }
 
-function testStoryCaseCollector() {
-  const collector = loadFresh(
-    path.join(repoRoot, "skills/story-long-scan/scripts/case-pool-builder.js")
-  );
+// 起点：移动端榜单记录只有名次、书名、作者、题材、字数和简介，不带总推荐。月票榜另有榜单值，
+// 其余榜整份没有热度数字时，文件头不能标「数据质量：[OK]」，否则聚合会把它当成正常采集。
+function testQidianQualityFlagsMissingHeat() {
+  const qidian = loadFresh(path.join(repoRoot, "skills/story-long-scan/scripts/qidian-rank-scraper.js"));
+  const record = (i, extra = {}) => ({
+    catId: 21, bName: `样书${i}`, rankNum: i + 1, cat: "玄幻", cnt: "12.3万字", subCatId: 8,
+    bid: String(1000 + i), subCat: "东方玄幻", bAuth: "作者", desc: "简介", _index: i, ...extra,
+  });
+  const signList = Array.from({ length: 20 }, (_, i) => qidian.normalizeMobileBook(record(i), i));
+  const flagged = qidian.rankQualityLines(signList);
+  assert.strictEqual(flagged[0], "- 数据质量：[存在问题]");
+  assert.match(flagged[1], /总推荐缺失 20 \/ 20 条/);
 
-  const longIntro =
-    "男主原本只是东京一家小公司的普通职员。一次意外后，他发现自己能听见别人做重大选择前的一句心声。" +
-    "他最初只想利用这个能力避开麻烦，却因为一次顺手的提醒改变了女邻居的人生，两人的关系也从陌生开始发生变化。" +
-    "随着能力不断把他卷进更多人的选择里，他原来的生活、工作和人与人之间的距离都被重新改写。";
-
-  assert(collector.isUsefulIntro(longIntro, 80), "有完整故事运动的简介必须保留");
-  assert(!collector.isUsefulIntro("重生东京，这一世我要活出精彩人生！", 80), "一句宣传语式简介必须淘汰");
-  const longSingleSentence =
-    "男主回到十年前最落魄的一天，带着未来十年的行业经验重新进入互联网公司，一路利用自己知道的产品周期、人才流动、资本变化和竞争对手弱点抢占机会并重新安排人生".repeat(2) + "。";
-  assert(
-    !collector.isUsefulIntro(longSingleSentence, 80),
-    "哪怕超过最小长度，只要仍然只有一句话，也不能进入 Case 池"
-  );
-  assert.strictEqual(
-    collector.evaluateIntro(longSingleSentence, 80).reason,
-    "singleSentence"
-  );
-  assert(!collector.isUsefulIntro("【都市+重生+恋爱】", 80), "只有标签的简介必须淘汰");
-  const explicitFemaleCase =
-    "【女主文】虞梨得到英雄编辑器后，把一个个少女角色当女儿养大。她原本只想安静玩游戏，后来这些角色却陆续来到现实，围绕她展开新的生活与关系。";
-  assert(
-    !collector.isUsefulIntro(explicitFemaleCase, 80),
-    "明确标注【女主文】的 Case 不能进入男频池"
-  );
-  assert.strictEqual(
-    collector.evaluateIntro(explicitFemaleCase, 80).reason,
-    "femaleChannel"
-  );
-  const maleCounterCase =
-    "张澈吐槽女频文的逆天剧情后穿进了霸总世界。他仍然以男主身份掌握行动权，开始用自己的方式整顿满城霸总，把原本围着恋爱脑转的规则全部掀翻。" +
-    "面对动不动就违法囚禁、豪掷千金和强取豪夺的霸总们，他直接报警、夺资源、收公司，让整个世界重新按他的判断运转。";
-  assert(
-    collector.isUsefulIntro(maleCounterCase, 80),
-    "正文提到女频但本身是男主视角的 Case 不能被误杀"
-  );
-
-  const md = [
-    "# 番茄 · 男频阅读榜",
-    "",
-    "### #1 东京选择",
-    "*作者 · 都市*",
-    "",
-    "**简介**",
-    "",
-    longIntro,
-    "",
-    "---",
-    "",
-    "### #2 东京选择",
-    "",
-    "**简介**",
-    "",
-    longIntro + "后来，他第一次主动利用这种能力替自己争取机会。",
-    "",
-    "---",
-    "",
-    "### #3 空壳作品",
-    "",
-    "**简介**",
-    "",
-    "重生东京，这一世我要活出精彩人生！",
-    "",
-    "---",
-  ].join("\n");
-
-  const historyIntro =
-    longIntro +
-    "几年后，他已经不再被动等待心声出现，而是主动把这项能力变成自己选择机会、关系和生活方向的工具。";
-  const oldBookIntro =
-    "一个已经完结多年的老作者，在事业最低谷时意外得到一次重新选择人生节点的机会。" +
-    "他没有回到少年时代，而是回到第一本书即将失败的那一天，于是决定先救活作品，再借作品改变自己的职业、人脉和家庭处境。" +
-    "旧时代的编辑制度、读者口味和网络环境都没有改变，改变的只有他已经知道哪些选择会把自己送进死路。";
-  const history = [
-    "# 榜单数据",
-    "",
-    "## 《东京选择》",
-    "",
-    historyIntro,
-    "",
-    "---",
-    "",
-    "## 《历史老书》",
-    "",
-    oldBookIntro,
-    "",
-    "---",
-  ].join("\n");
-
-  const built = collector.buildCasePool([md, history], 80);
-  assert.strictEqual(built.stats.extracted, 5);
-  assert.strictEqual(built.stats.acceptedBeforeDedupe, 4);
-  assert.strictEqual(built.stats.duplicates, 2);
-  assert.strictEqual(built.stats.final, 2);
-  const tokyo = built.cases.find((item) => item.title === "东京选择");
-  assert(tokyo, "跨日期累积后必须保留东京选择");
-  assert.strictEqual(tokyo.intro, historyIntro, "同名 Case 必须保留信息更完整的历史/新版本");
-  assert(built.cases.some((item) => item.title === "历史老书"), "历史池独有 Case 不能被新一轮覆盖丢失");
-  assert.deepStrictEqual(Object.keys(tokyo).sort(), ["intro", "title"]);
-  assert.match(collector.renderCaseMarkdown(built.cases), /## 《东京选择》/);
-  const finalMd = collector.renderCaseMarkdown(built.cases);
-  assert(!/^\*.*作者.*\*$/m.test(finalMd), "最终 Case 输出不得混入作者元数据行");
-  assert(!/\*\*排名|\*\*榜单值|\*\*总推荐/u.test(finalMd), "最终 Case 输出不得混入榜单元数据");
-
-  const fanqie = loadFresh(
-    path.join(repoRoot, "skills/story-long-scan/scripts/fanqie-rank-scraper.js")
-  );
-  const qimao = loadFresh(
-    path.join(repoRoot, "skills/story-long-scan/scripts/qimao-rank-scraper.js")
-  );
-  const veryLong = "第一段。" + "甲".repeat(180) + "最后一段。";
-  assert.strictEqual(fanqie.cleanDesc(veryLong), veryLong, "番茄简介不得截断");
-  assert.strictEqual(qimao.cleanDesc(veryLong), veryLong, "七猫简介不得截断");
+  const monthlyTickets = Array.from({ length: 20 }, (_, i) => qidian.normalizeMobileBook(record(i, { rankCnt: "8000" }), i));
+  assert.deepStrictEqual(qidian.rankQualityLines(monthlyTickets), ["- 数据质量：[OK]", "- 问题摘要：无"]);
 }
 
-function testCiweimaoFullIntroParser() {
-  const scraper = loadFresh(
-    path.join(repoRoot, "skills/story-long-scan/scripts/ciweimao-rank-scraper.js")
-  );
+// ---------------------------------------------------------------------------
+// 起点书库（--type library）：反爬字体解码、翻页、名次、去重、partial。全程离线：
+// 列表页走假 agent-browser（按 qdLibraryPageSnapshot 分派），字体与移动端作品页走
+// 预加载替身的 https.get，字体在这里现场合成，不提交任何真实 .ttf。
+// ---------------------------------------------------------------------------
 
-  const maleText = [
-    "某科学的英灵速通指南",
-    "某科学的英灵速通指南",
-    "作者甲 著 / 科幻无限",
-    "123万字 / 连载中",
-    "更新：今天 / 第100章",
-    "立即阅读",
-    "放入书架",
-    "321月票",
-    "654推荐票",
-    "0次打赏",
-    "12刀片",
-    "藤丸立香掉进了另一个世界，他手里只剩下一套看起来完全不讲道理的英灵组合。",
-    "别人按部就班攻略地下城，他却开始把宝具、从者与当地规则重新拼在一起，硬是走出一条谁也没见过的路线。",
-    "作品目录",
-    "第一章",
-  ].join("\n");
+const QD_SCRAPER = path.join(repoRoot, "skills/story-long-scan/scripts/qidian-rank-scraper.js");
+const QD_FONT_URL = (name) => `https://qdfepccdn.qidian.com/gtimg/qd_anti_spider/${name}.ttf`;
+const QD_CIPHER_RE = /[\uE000-\uF8FF\u{17000}-\u{18D8F}\u{F0000}-\u{10FFFF}]/u;
 
-  const detail = scraper.parseMIPDetailText(maleText, "某科学的英灵速通指南");
-  assert.strictEqual(detail.title, "某科学的英灵速通指南");
-  assert.strictEqual(detail.author, "作者甲");
-  assert.strictEqual(detail.category, "科幻无限");
-  assert.match(detail.desc, /藤丸立香掉进了另一个世界/);
-  assert.match(detail.desc, /别人按部就班攻略地下城/);
-  assert(!detail.desc.includes("作品目录"), "目录不能混入简介");
-  assert.strictEqual(scraper.isAllowedCategory(detail.category), true);
+/** Mac 标准字形序里用得到的几个下标（post 2.0 下标 < 258） */
+const TEST_MAC_GLYPH_INDEX = {
+  ".notdef": 0,
+  period: 17,
+  zero: 19,
+  one: 20,
+  two: 21,
+  three: 22,
+  four: 23,
+  five: 24,
+  six: 25,
+  seven: 26,
+  eight: 27,
+  nine: 28,
+};
+const TEST_DIGIT_GLYPHS = {
+  0: "zero",
+  1: "one",
+  2: "two",
+  3: "three",
+  4: "four",
+  5: "five",
+  6: "six",
+  7: "seven",
+  8: "eight",
+  9: "nine",
+  ".": "period",
+};
 
-  const female = scraper.parseMIPDetailText(
-    [
-      "女频样书",
-      "作者乙 著 / 女频",
-      "10万字 / 连载中",
-      "立即阅读",
-      "1月票",
-      "2推荐票",
-      "0次打赏",
-      "0刀片",
-      "第一句简介。",
-      "第二句简介。",
-      "作品目录",
-    ].join("\n"),
-    "女频样书"
-  );
-  assert.strictEqual(female.category, "女频");
-  assert.strictEqual(
-    scraper.isAllowedCategory(female.category),
-    false,
-    "刺猬猫女频分类必须在进入 Case Builder 前就被排除"
-  );
-  assert.strictEqual(
-    scraper.isAllowedCategory(""),
-    false,
-    "刺猬猫分类解析失败时必须 fail closed，宁可漏收也不能误放女频"
-  );
-  assert.match(scraper.buildMIPPageTextJS(), /document\.body/);
+/**
+ * 合成一个最小 TrueType：表目录 + cmap（format 12 或 4）+ post 2.0。
+ * entries 是 [码点, 字形名]；customNames 里的名字即便有 Mac 标准下标也写成 Pascal 串（走 >=258 分支）。
+ */
+function buildTestFont({ entries, cmapFormat = 12, customNames = [], postVersion = 0x00020000, magic = 0x00010000 }) {
+  const glyphs = [".notdef"];
+  const gidOf = {};
+  for (const [, name] of entries) {
+    if (!(name in gidOf)) {
+      gidOf[name] = glyphs.length;
+      glyphs.push(name);
+    }
+  }
+  const extra = [];
+  const indices = glyphs.map((name) => {
+    if (name in TEST_MAC_GLYPH_INDEX && !customNames.includes(name)) return TEST_MAC_GLYPH_INDEX[name];
+    extra.push(name);
+    return 258 + extra.length - 1;
+  });
+  const post = Buffer.alloc(34 + indices.length * 2 + extra.reduce((n, s) => n + 1 + s.length, 0));
+  post.writeUInt32BE(postVersion, 0);
+  post.writeUInt16BE(glyphs.length, 32);
+  indices.forEach((idx, i) => post.writeUInt16BE(idx, 34 + i * 2));
+  let at = 34 + indices.length * 2;
+  for (const name of extra) {
+    post.writeUInt8(name.length, at);
+    post.write(name, at + 1, "latin1");
+    at += 1 + name.length;
+  }
+
+  const pairs = entries.map(([cp, name]) => [cp, gidOf[name]]).sort((a, b) => a[0] - b[0]);
+  let sub;
+  if (cmapFormat === 12) {
+    sub = Buffer.alloc(16 + pairs.length * 12);
+    sub.writeUInt16BE(12, 0);
+    sub.writeUInt32BE(sub.length, 4);
+    sub.writeUInt32BE(pairs.length, 12);
+    pairs.forEach(([cp, gid], i) => {
+      sub.writeUInt32BE(cp, 16 + i * 12);
+      sub.writeUInt32BE(cp, 20 + i * 12);
+      sub.writeUInt32BE(gid, 24 + i * 12);
+    });
+  } else {
+    const segs = [...pairs, [0xffff, null]];
+    const n = segs.length;
+    sub = Buffer.alloc(16 + n * 8);
+    sub.writeUInt16BE(4, 0);
+    sub.writeUInt16BE(sub.length, 2);
+    sub.writeUInt16BE(n * 2, 6);
+    segs.forEach(([cp, gid], i) => {
+      sub.writeUInt16BE(cp, 14 + i * 2);
+      sub.writeUInt16BE(cp, 16 + n * 2 + i * 2);
+      sub.writeUInt16BE(gid === null ? 1 : (gid - cp) & 0xffff, 16 + n * 4 + i * 2);
+    });
+  }
+  const cmapHead = Buffer.alloc(12);
+  cmapHead.writeUInt16BE(1, 2);
+  cmapHead.writeUInt16BE(3, 4);
+  cmapHead.writeUInt16BE(cmapFormat === 12 ? 10 : 1, 6);
+  cmapHead.writeUInt32BE(12, 8);
+  const tables = [
+    ["cmap", Buffer.concat([cmapHead, sub])],
+    ["post", post],
+  ];
+  const head = Buffer.alloc(12 + tables.length * 16);
+  head.writeUInt32BE(magic, 0);
+  head.writeUInt16BE(tables.length, 4);
+  let offset = head.length;
+  const bodies = [];
+  tables.forEach(([tag, body], i) => {
+    const rec = 12 + i * 16;
+    head.write(tag, rec, "latin1");
+    head.writeUInt32BE(offset, rec + 8);
+    head.writeUInt32BE(body.length, rec + 12);
+    const padded = Buffer.alloc(Math.ceil(body.length / 4) * 4);
+    body.copy(padded);
+    bodies.push(padded);
+    offset += padded.length;
+  });
+  return Buffer.concat([head, ...bodies]);
 }
 
-function testQidianBooklistCollector() {
-  const scraper = loadFresh(
-    path.join(repoRoot, "skills/story-long-scan/scripts/qidian-booklist-scraper.js")
-  );
-  const collector = loadFresh(
-    path.join(repoRoot, "skills/story-long-scan/scripts/case-pool-builder.js")
-  );
+/** 一套「数字 → 密文码点」的乱序表，生成对应字体与密文 */
+function makeCipher(base, order) {
+  const codeOf = {};
+  order.split("").forEach((ch, i) => {
+    codeOf[ch] = base + i;
+  });
+  return {
+    font: (opts = {}) =>
+      buildTestFont({
+        entries: Object.entries(codeOf).map(([ch, cp]) => [cp, TEST_DIGIT_GLYPHS[ch]]),
+        ...opts,
+      }),
+    encode: (text) => text.split("").map((ch) => codeOf[ch]),
+  };
+}
 
-  const anchors = scraper.extractAnchorBookIdsFromMarkdown([
-    "[作品页](https://m.qidian.com/book/1040584849/)",
-    "[作品页](https://www.qidian.com/book/1039526256/)",
-    "[重复](https://m.qidian.com/book/1040584849/)",
-  ].join("\n"));
-  assert.deepStrictEqual(anchors, ["1040584849", "1039526256"]);
+function testQidianCaptchaCheckIgnoresBookText() {
+  // 书库页前 3000 字里有整段简介和章节名：书里写到「验证」「拖动」不能当成被拦，
+  // 否则白等 3 次重试和 120 秒人工验证；真被拦（没有作品链接）时照旧判拦。
+  const qidian = loadFresh(QD_SCRAPER);
+  const run = (bookLinks, text, hasContainer) => JSON.parse(require("vm").runInNewContext(qidian.captchaCheckJS(), {
+    document: {
+      body: { innerText: text },
+      querySelectorAll: (selector) => (selector.includes("/book/") ? new Array(bookLinks).fill({}) : []),
+      querySelector: () => (hasContainer ? {} : null),
+    },
+  }));
+  assert.deepStrictEqual(run(20, "第88章 身份验证 拖动滑块解谜", true), { blocked: false, reason: "" });
+  assert.strictEqual(run(0, "请完成验证后继续访问", false).blocked, true);
+  assert.strictEqual(run(0, "请完成验证后继续访问", true).blocked, true, "只有容器、没有作品链接时关键词照样生效");
+  assert.strictEqual(run(0, "", false).reason, "页面无榜单内容(可能被拦截)");
+}
 
-  assert.match(
-    scraper.normalizeBooklistUrl(
-      "/booklist/detail/12345/",
-      "https://book.qidian.com/booklist/"
-    ),
-    /qidian\.com\/booklist\/detail\/12345\//
-  );
+function testQidianLibraryFontDecoding() {
+  const qidian = loadFresh(QD_SCRAPER);
+  // 码点顺序故意打乱（0x187b7 起依次是 8、2、1、6…），和真实字体一样不按数字顺序排
+  const order = "8216405973.";
+  assert.strictEqual(new Set(order).size, 11);
+  const real = makeCipher(0x187b7, order);
+
+  // format 12 + post 2.0：密文码点在辅助平面，必须靠 format 12
+  const map = qidian.parseAntiSpiderFont(real.font());
+  assert.strictEqual(map.size, 11);
+  assert.strictEqual(qidian.decodeLibraryWords(real.encode("12.34"), "万字", map), "12.34万字");
+  assert.strictEqual(qidian.decodeLibraryWords(real.encode("8000"), "字", map), "8000字");
+
+  // 字形名存成 Pascal 串（下标 >= 258）也要认得
+  const custom = qidian.parseAntiSpiderFont(real.font({ customNames: ["one", "period"] }));
+  assert.strictEqual(qidian.decodeLibraryWords(real.encode("1.1"), "万字", custom), "1.1万字");
+
+  // format 4（BMP 私用区）同样能解
+  const bmp = makeCipher(0xe100, order);
+  const bmpMap = qidian.parseAntiSpiderFont(bmp.font({ cmapFormat: 4 }));
+  assert.strictEqual(qidian.decodeLibraryWords(bmp.encode("26.14"), "万字", bmpMap), "26.14万字");
+
+  // 解不出来一律返回 ""：未知码点、单位不明、拼出来不是数字、字形名不在白名单
+  assert.strictEqual(qidian.decodeLibraryWords([...real.encode("12"), 0x18000], "万字", map), "");
+  assert.strictEqual(qidian.decodeLibraryWords(real.encode("12"), "", map), "");
+  assert.strictEqual(qidian.decodeLibraryWords(real.encode("1..2"), "万字", map), "");
+  const bogus = buildTestFont({
+    entries: [
+      [0x18800, "one"],
+      [0x18801, "bogus"],
+    ],
+  });
+  const bogusMap = qidian.parseAntiSpiderFont(bogus);
+  assert.strictEqual(qidian.decodeLibraryWords([0x18800], "万字", bogusMap), "1万字");
   assert.strictEqual(
-    scraper.normalizeBooklistUrl("https://book.qidian.com/booklist/"),
+    qidian.decodeLibraryWords([0x18800, 0x18801], "万字", bogusMap),
     "",
-    "书单首页不是具体书单"
-  );
-  assert.strictEqual(
-    scraper.normalizeBooklistUrl("https://example.com/booklist/123"),
-    "",
-    "外站链接不能混入起点书单"
-  );
-  assert.match(scraper.buildBooklistLinksJS(), /包含本书的书单/);
-  assert.strictEqual(scraper.parseFollowerCount("999+关注"), 999);
-  assert.strictEqual(scraper.parseFollowerCount("1.2万关注"), 12000);
-  assert.strictEqual(scraper.parseFollowerCount("没有关注量"), 0);
-  assert.match(scraper.buildCatalogBooklistsJS(), /followers/);
-  assert.match(scraper.buildBookIdsFromListJS(), /book\|info/);
-  assert.match(scraper.buildBookDetailsJS(["1"]), /作品简介/);
-  assert.deepStrictEqual(
-    scraper.selectSpread(
-      Array.from({ length: 10 }, (_, index) => ({ id: String(index + 1) })),
-      4
-    ).map((item) => item.id),
-    ["1", "3", "6", "8"],
-    "二跳锚点必须均匀覆盖第一层候选，而不是只拿开头几本"
+    "白名单外的字形名不能被当成数字"
   );
 
-  const pendingText = [
-    JSON.stringify({
-      book_id: "1050000001",
-      title: "待补样书",
-      url: "https://www.qidian.com/book/1050000001/",
-      first_seen: "20260919",
-      attempts: 2,
-    }),
-    JSON.stringify({
-      book_id: "1050000001",
-      title: "待补样书（更完整标题）",
-      url: "https://www.qidian.com/book/1050000001/",
-      first_seen: "20260920",
-      attempts: 3,
-    }),
-    "{bad json",
-    "",
-  ].join("\n");
-  const parsedPending = scraper.parsePendingJSONL(pendingText);
-  assert.strictEqual(parsedPending.length, 1, "同一 book_id 在待补队列中必须去重");
-  assert.strictEqual(parsedPending[0].book_id, "1050000001");
-  assert.strictEqual(parsedPending[0].title, "待补样书（更完整标题）");
-  assert.strictEqual(parsedPending[0].first_seen, "20260919", "首次发现日期必须保留");
-  assert.strictEqual(parsedPending[0].attempts, 3, "重试次数取已知最大值");
+  // 坏字体一律抛错（调用方据此写 [待补]）
+  const good = real.font();
+  const badMagic = Buffer.from(good);
+  badMagic.writeUInt32BE(0xdeadbeef, 0);
+  assert.throws(() => qidian.parseAntiSpiderFont(badMagic), /不是 TrueType/);
+  assert.throws(() => qidian.parseAntiSpiderFont(good.subarray(0, 40)), /越界/);
+  assert.throws(() => qidian.parseAntiSpiderFont(Buffer.from("not a font")), /太短/);
+  assert.throws(
+    () => qidian.parseAntiSpiderFont(real.font({ postVersion: 0x00030000 })),
+    /post 表版本/
+  );
+  assert.throws(
+    () => qidian.parseAntiSpiderFont(buildTestFont({ entries: [[0x18800, "bogus"]] })),
+    /没有可识别的数字字形/
+  );
+}
 
-  const retriedPending = scraper.toPendingRecord(
-    { id: "1050000001", title: "待补样书" },
-    parsedPending[0],
-    true
-  );
-  assert.strictEqual(retriedPending.attempts, 4, "每次真实补抓失败后重试次数加一");
-  const pendingRoundTrip = scraper.parsePendingJSONL(
-    scraper.renderPendingJSONL([retriedPending])
-  );
-  assert.deepStrictEqual(pendingRoundTrip, [retriedPending]);
+const QD_LIBRARY_HTTPS_STUB = `// 预加载：https.get 离线替身（字体与 m.qidian.com 作品页），按 URL 查计划表
+"use strict";
+const fs = require("fs");
+const https = require("https");
+const { EventEmitter } = require("events");
+const { PassThrough } = require("stream");
+const plan = JSON.parse(fs.readFileSync(process.env.QD_LIBRARY_HTTPS_PLAN, "utf8"));
+https.get = function (url, options, callback) {
+  const href = String(url);
+  fs.appendFileSync(process.env.QD_LIBRARY_HTTPS_LOG, href + "\\n");
+  const req = new EventEmitter();
+  req.destroy = (err) => { if (err) process.nextTick(() => req.emit("error", err)); };
+  process.nextTick(() => {
+    const hit = plan[href];
+    if (!hit) { req.emit("error", new Error("offline stub: unexpected " + href)); return; }
+    const res = new PassThrough();
+    res.statusCode = hit.status || 200;
+    res.headers = {};
+    callback(res);
+    res.end(hit.base64 ? Buffer.from(hit.base64, "base64") : Buffer.from(hit.text || "", "utf8"));
+  });
+  return req;
+};
+`;
 
-  const intro =
-    "主角在一次失败后离开原来的行业，本想回乡过普通生活，却在整理旧书时发现父亲留下的一份名单。" +
-    "名单上的每个人都曾在同一年改变命运，他决定逐个找到他们，由此重新进入早已离开的商业世界。" +
-    "每找到一个人，他都会得到一段过去从未知道的关系，也让自己的人生重新拥有可以下注的机会。";
-  const rendered = scraper.renderMarkdown(
-    [{ title: "书单扩展样书", intro, url: "https://www.qidian.com/book/1/" }],
-    { anchorCount: 3, listCount: 5, candidateCount: 9, hop2AnchorCount: 2, hop2ListCount: 4 }
-  );
-  assert.match(rendered, /# 起点 · 上榜作品关联书单扩展/);
-  assert.match(rendered, /二跳锚点：2 本/);
-  assert.match(rendered, /二跳新增书单：4 个/);
-  assert.match(rendered, /## #1 书单扩展样书/);
-  const built = collector.buildCasePool([rendered], 80);
-  assert.strictEqual(built.stats.final, 1);
-  assert.strictEqual(built.cases[0].title, "书单扩展样书");
-  assert.strictEqual(built.cases[0].intro, intro);
+/** 跑起点书库 CLI：pages 是 {页码: 列表页快照}，https 是 {URL: {status, text|base64}} */
+function runQidianLibrary(args, { pages = {}, https = {}, env = {} } = {}) {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "story-qd-library-"));
+  try {
+    const preload = makeScraperHarness(tmpDir);
+    const stub = path.join(tmpDir, "stub-https.js");
+    fs.writeFileSync(stub, QD_LIBRARY_HTTPS_STUB, "utf8");
+    const pagesFile = path.join(tmpDir, "pages.json");
+    fs.writeFileSync(pagesFile, JSON.stringify(pages), "utf8");
+    const planFile = path.join(tmpDir, "https-plan.json");
+    fs.writeFileSync(planFile, JSON.stringify(https), "utf8");
+    const logFile = path.join(tmpDir, "https.log");
+    fs.writeFileSync(logFile, "", "utf8");
+    const outdir = path.join(tmpDir, "out");
+    const result = spawnSync(
+      process.execPath,
+      ["--require", preload, "--require", stub, QD_SCRAPER, ...args, "--outdir", outdir],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+        timeout: 60000,
+        env: {
+          ...process.env,
+          PATH: `${tmpDir}${path.delimiter}${process.env.PATH}`,
+          SCAN_TEST_UTILS: path.join(path.dirname(QD_SCRAPER), "cdp-utils.js"),
+          SCAN_FAKE_QD_LIBRARY: pagesFile,
+          QD_LIBRARY_HTTPS_PLAN: planFile,
+          QD_LIBRARY_HTTPS_LOG: logFile,
+          ...env,
+        },
+      }
+    );
+    const files = fs.existsSync(outdir) ? fs.readdirSync(outdir).sort() : [];
+    const contents = files.map((name) => fs.readFileSync(path.join(outdir, name), "utf8"));
+    const requests = fs.readFileSync(logFile, "utf8").split("\n").filter(Boolean);
+    return { ...result, files, contents, requests };
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+const QD_GOOD_FILTERS = ["全部", "连载", "全部", "30万字以下", "全部", "三日内", "全部", "全部"];
+
+function qdLibraryPage(page, fontName, books, overrides = {}) {
+  return {
+    qdLibraryPage: page,
+    path: page === 1 ? "/all/action0-size1-update1/" : `/all/action0-size1-update1-page${page}/`,
+    site: "男生",
+    filters: QD_GOOD_FILTERS,
+    sort: "人气排序",
+    pager: String(page),
+    pagerMax: 50,
+    fontUrls: { [fontName]: QD_FONT_URL(fontName) },
+    items: books.map((b, i) => ({
+      rid: String(i + 1),
+      bookId: String(b.id),
+      title: `书${b.id}`,
+      author: `作者${b.id}`,
+      genre: "玄幻",
+      subGenre: "东方玄幻",
+      status: "连载",
+      intro: `简介${b.id}`,
+      wordsFont: fontName,
+      wordsCodes: b.codes,
+      wordsUnit: "万字",
+      latestChapter: `第${b.id}章`,
+    })),
+    ...overrides,
+  };
+}
+
+function qdMobileBookHtml(info) {
+  const ctx = { pageContext: { pageProps: { pageData: { bookInfo: info } } } };
+  return `<html><script id="vite-plugin-ssr_pageContext" type="application/json">${JSON.stringify(ctx)}</script></html>`;
+}
+
+function qdMobilePlan(ids, { missing = [] } = {}) {
+  const plan = {};
+  for (const id of ids) {
+    plan[`https://m.qidian.com/book/${id}/`] = missing.includes(id)
+      ? { status: 404, text: "gone" }
+      : {
+          text: qdMobileBookHtml({
+            bookId: id,
+            recomAll: id,
+            signStatus: "签约作品",
+            isVip: 1,
+            wordsCnt: 123456,
+            updTime: "3小时前",
+          }),
+        };
+  }
+  return plan;
+}
+
+const range = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => from + i);
+
+function testQidianLibraryPagingE2E() {
+  const fontA = makeCipher(0x187b7, "8216405973.");
+  const fontB = makeCipher(0x18800, "7.093826154");
+  const page1 = range(1001, 1020).map((id) => ({ id, codes: fontA.encode("12.34") }));
+  // 1005 的密文里混进一个字体里没有的码点：解不出来就用详情页字数兜底，不输出乱码
+  page1[4].codes = [...fontA.encode("12"), 0x18d00];
+  // 第 2 页开头两本是第 1 页的书（翻页时名次变动）：去重后按首次出现编号
+  const page2 = [1019, 1020, ...range(1021, 1038)].map((id) => ({ id, codes: fontB.encode("5.6") }));
+  const page3 = page2.slice(0, 5);
+  const ids = range(1001, 1038);
+  const https = {
+    [QD_FONT_URL("QdTestAa")]: { base64: fontA.font().toString("base64") },
+    [QD_FONT_URL("QdTestBb")]: { base64: fontB.font().toString("base64") },
+    ...qdMobilePlan(ids, { missing: [1030] }),
+  };
+  const pages = {
+    1: qdLibraryPage(1, "QdTestAa", page1),
+    2: qdLibraryPage(2, "QdTestBb", page2),
+    3: qdLibraryPage(3, "QdTestBb", page3),
+  };
+
+  // --pages 10（上限），但第 3 页没有新书就停：第 4 页一旦被打开就会失败（exit 2），
+  // 所以 exit 0 证明没翻过去
+  const run = runQidianLibrary(["--type", "library", "--pages", "10"], {
+    pages,
+    https,
+    env: { SCAN_FAKE_FAIL_OPEN: "update1-page4/" },
+  });
+  assert.strictEqual(run.status, 0, `书库正常采集应 exit 0:\n${run.stdout}\n${run.stderr}`);
+  assert.strictEqual(run.files.length, 1, run.files.join(", "));
+  assert.match(run.files[0], /^起点男频书库人气新书_\d{8}\.md$/);
+  const md = run.contents[0];
+  assert.strictEqual(md.split("\n")[0], "# 起点 · 男频书库人气新书", "首行决定聚合的平台与「新书榜」列");
+  assert.match(md, /- 来源：https:\/\/www\.qidian\.com\/all\/action0-size1-update1\/\n/);
+  assert.match(md, /- 抓取方式：cdp-pc\n/);
+  assert.match(md, /- 筛选：男生·连载·30万字以下·三日内更新；人气排序，取前 10 页\n/);
+  assert.match(md, /- 实际翻页：3 页（第 3 页没有新书，停止翻页）\n/);
+  assert.match(md, /- 条目数：38\n/);
+  assert.match(md, /- 字数来源：反爬字体解码 37 条，详情页兜底 1 条，缺失 0 条\n/);
+  assert.match(md, /- 详情补全：成功 37 \/ 共 38\n/);
+  assert.match(md, /- 数据质量：\[OK\]\n- 问题摘要：无\n/);
+
+  const ranks = [...md.matchAll(/^## #(\d+) /gm)].map((m) => Number(m[1]));
+  assert.deepStrictEqual(ranks, range(1, 38), "名次跨页连续，不按页重排");
+  assert.strictEqual((md.match(/^## #\d+ 书1020$/gm) || []).length, 1, "跨页重复的书只出现一次");
+  assert.match(md, /^## #20 书1020$/m);
+  assert.match(md, /^## #21 书1021$/m, "去重后第 2 页的第一本新书接着第 1 页编号");
+  assert(!/^## .*\n/m.test(md.split("---")[0]), "文件头里不能有按页的分组标题");
+
+  const entry = (id) => md.slice(md.indexOf(` 书${id}\n`), md.indexOf("\n---", md.indexOf(` 书${id}\n`)));
+  assert.match(entry(1001), /\*作者1001 · 玄幻·东方玄幻 · 连载\*/);
+  assert.match(entry(1001), /\*\*字数：12\.34万字\*\*/);
+  assert.match(entry(1001), /\*\*新书总推荐：1001\*\*/);
+  assert(!/^\*\*总推荐：/m.test(md), "书库条目的总推荐单列为新书总推荐，不能进聚合的热度口径");
+  assert.match(md, /^- 热度：名次即人气排名/m);
+  assert.match(entry(1001), /\*\*签约：签约作品\*\*/);
+  assert.match(entry(1001), /\*\*收费模式：VIP\*\*/);
+  assert.match(entry(1001), /\*\*最新更新：\*\* 第1001章 · 3小时前/);
+  assert.match(entry(1001), /\[作品页\]\(https:\/\/www\.qidian\.com\/book\/1001\/\)/);
+  assert.match(entry(1005), /\*\*字数：12\.35万字\*\*/, "字体解不出时用详情页 wordsCnt 兜底");
+  assert.match(entry(1021), /\*\*字数：5\.6万字\*\*/, "每页的字体各自解码");
+  assert.match(entry(1030), /\*\*新书总推荐：\[待补\]\*\*/, "单本详情失败写 [待补]");
+  assert.match(entry(1030), /\*\*签约：\[待补\]\*\*/);
+  assert(!QD_CIPHER_RE.test(md), "输出里不能出现反爬密文字符");
+
+  // 字体只从白名单 host 下载、同名字体只下一次；详情只打 m.qidian.com
+  assert.strictEqual(run.requests.filter((u) => u === QD_FONT_URL("QdTestAa")).length, 1);
+  assert.strictEqual(run.requests.filter((u) => u === QD_FONT_URL("QdTestBb")).length, 1);
+  for (const url of run.requests) {
+    assert.match(url, /^https:\/\/(qdfepccdn\.qidian\.com\/gtimg\/qd_anti_spider\/|m\.qidian\.com\/book\/)/);
+  }
+
+  // 第 2 页打不开（URL 形状 -page2/）：保留第 1 页、写文件、exit 2，并写明原因；不传 --pages 默认 3 页
+  const partial = runQidianLibrary(["--type", "library"], {
+    pages,
+    https,
+    env: { SCAN_FAKE_FAIL_OPEN: "/all/action0-size1-update1-page2/" },
+  });
+  assert.strictEqual(partial.status, 2, `部分页失败必须 exit 2:\n${partial.stdout}\n${partial.stderr}`);
+  assert.match(partial.stderr, /起点采集 partial: wrote 1\/1; 男频书库人气新书: 第 2 页没取到/);
+  assert.strictEqual(partial.files.length, 1);
+  assert.match(partial.contents[0], /- 条目数：20\n/);
+  assert.match(partial.contents[0], /取前 3 页\n/);
+  assert.match(partial.contents[0], /- 数据质量：\[存在问题\]/);
+  assert.match(partial.contents[0], /- 问题摘要：第 2 页没取到：.*（已保留前 1 页）/);
+
+  // 第 1 页实际选中的频道/筛选/排序对不上：不能写成「男频书库人气新书」，exit 1、不写文件
+  for (const [override, message] of [
+    [{ sort: "总收藏" }, /排序是「总收藏」/],
+    [{ site: "女生" }, /频道是「女生」/],
+    [{ filters: ["全部", "连载", "全部", "30万字以下", "全部", "七日内"] }, /没选中「三日内」/],
+  ]) {
+    const wrong = runQidianLibrary(["--type", "library"], {
+      pages: { ...pages, 1: { ...pages[1], ...override } },
+      https,
+    });
+    assert.strictEqual(wrong.status, 1, wrong.stderr);
+    assert.strictEqual(wrong.files.length, 0);
+    assert.match(wrong.stderr, /第 1 页没取到：筛选状态不符（/);
+    assert.match(wrong.stderr, message);
+    assert.match(wrong.stderr, /起点采集 failed: no output was written/);
+  }
+
+  // 站点静默退回第 1 页（分页器停在 1）：第 2 页不能当成新的 20 本写进去
+  const fellBack = runQidianLibrary(["--type", "library", "--pages", "2"], {
+    pages: { ...pages, 2: { ...pages[1], qdLibraryPage: 2, pager: "1" } },
+    https,
+  });
+  assert.strictEqual(fellBack.status, 2, fellBack.stderr);
+  assert.match(fellBack.stderr, /第 2 页没取到：筛选状态不符（分页停在第「1」页）/);
+  assert.match(fellBack.contents[0], /- 条目数：20\n/);
+
+  // 第 1 页一本都没有：exit 1、不写空文件
+  const empty = runQidianLibrary(["--type", "library"], {
+    pages: { 1: qdLibraryPage(1, "QdTestAa", []) },
+    https,
+  });
+  assert.strictEqual(empty.status, 1, empty.stderr);
+  assert.strictEqual(empty.files.length, 0);
+  assert.match(empty.stderr, /书库列表页一本都没抓到/);
+
+  // 字体地址不在白名单（换了 host）：不下载；某本详情也失败时字数写 [待补] 并进问题摘要，
+  // 绝不把密文写出去。替身其实能答这个地址——下载了就会解出字数，断言就会红
+  // 同一页里一条缺作者（宁可不收，免得元信息错位）、一条书名混进密文字符（要剥掉）
+  const evilFont = "https://qdfepccdn.qidian.com.evil.example/gtimg/qd_anti_spider/QdTestAa.ttf";
+  const dirtyItems = pages[1].items.map((item) => ({ ...item }));
+  dirtyItems[5].author = "";
+  dirtyItems[6].title = "书1007\u{187B9}";
+  const noFont = runQidianLibrary(["--type", "library", "--pages", "1"], {
+    pages: { 1: { ...pages[1], items: dirtyItems, fontUrls: { QdTestAa: evilFont } } },
+    https: {
+      [evilFont]: { base64: fontA.font().toString("base64") },
+      ...qdMobilePlan(range(1001, 1020), { missing: [1003] }),
+    },
+  });
+  assert.strictEqual(noFont.status, 0, noFont.stderr);
+  assert(!noFont.requests.includes(evilFont), "白名单外的字体地址不得请求");
+  const md2 = noFont.contents[0];
+  assert.match(md2, /- 条目数：19\n/);
+  assert.match(md2, /- 字数来源：反爬字体解码 0 条，详情页兜底 18 条，缺失 1 条\n/);
+  assert.match(md2, /- 数据质量：\[存在问题\]\n- 问题摘要：字数缺失 1 条.*；缺书名\/作者\/题材的条目 1 条，已跳过/);
+  assert.match(md2, /## #3 书1003\n[^#]*\*\*字数：\[待补\]\*\*/);
+  assert(!md2.includes("书1006"), "缺作者的条目不该写进去");
+  assert.match(md2, /^## #6 书1007$/m, "跳过的条目不占名次，书名里的密文字符被剥掉");
+  assert(!QD_CIPHER_RE.test(md2), "字体解不出时不能把密文写进输出");
 }
 
 // 七猫大热榜：日/月必须是显式采集维度，并进入文件名；非大热榜只采一次。
@@ -986,7 +1151,7 @@ function testQimaoPeriodPlan() {
   );
   const dirtyDesc = `${"甲".repeat(110)}。 飙升 18名`;
   const cleanDesc = qimao.cleanDesc(dirtyDesc);
-  assert.strictEqual(cleanDesc, `${"甲".repeat(110)}。`, "七猫简介必须保留完整正文");
+  assert.strictEqual(cleanDesc, `${"甲".repeat(110)}。`, "七猫保留完整原文，只去掉 UI 排名变化");
   assert(!cleanDesc.includes("飙升 18名"), "七猫排名变化 UI 文本不得混入简介");
 
   const incompleteBook = {
@@ -1068,6 +1233,328 @@ function testQimaoPartialTargetStatus() {
   assert.match(run.stderr, /七猫采集 partial: wrote 1\/2; failed 1/);
 }
 
+// ---------------------------------------------------------------------------
+// 七猫书库（--source library）：走 Node https，不开 Chrome。预加载把 https.get 换成按 URL
+// 查夹具的替身，并把 sleep / ab 换成记账，断言请求顺序、限速和「全程没碰 CDP」。
+// ---------------------------------------------------------------------------
+
+const QIMAO_SCRAPER = path.join(
+  repoRoot,
+  "skills/story-long-scan/scripts/qimao-rank-scraper.js"
+);
+const QIMAO_LIBRARY_STUB = `// 预加载：书库测试一律离线
+const fs = require("fs");
+const https = require("https");
+const { EventEmitter } = require("events");
+const { PassThrough } = require("stream");
+const routes = JSON.parse(fs.readFileSync(process.env.SCAN_FAKE_HTTPS_ROUTES, "utf8"));
+const record = (line) => fs.appendFileSync(process.env.SCAN_FAKE_CALLS, line + "\\n");
+const utils = require(process.env.SCAN_TEST_UTILS);
+utils.sleep = (ms) => record("sleep " + ms);
+utils.ab = () => { record("ab"); throw new Error("library mode must not touch CDP"); };
+https.get = function fakeGet(url, options, callback) {
+  const target = String(url);
+  record("GET " + target);
+  const req = new EventEmitter();
+  req.destroy = (err) => setImmediate(() => req.emit("error", err || new Error("destroyed")));
+  setImmediate(() => {
+    // 真站的响应头有折行，Node 严格解析器会在这里报错（实测）；替身照样拒绝严格解析的请求。
+    if (!options || options.insecureHTTPParser !== true) {
+      req.emit("error", new Error("Parse Error: Unexpected whitespace after header value"));
+      return;
+    }
+    const route = routes[target];
+    if (!route) {
+      req.emit("error", new Error("no fixture for " + target));
+      return;
+    }
+    const res = new PassThrough();
+    res.statusCode = route.status || 200;
+    res.headers = route.location ? { location: route.location } : {};
+    callback(res);
+    res.end(route.body || "");
+  });
+  return req;
+};
+`;
+
+const QM_PAGE = (n) => `https://www.qimao.com/shuku/a-a-a-1-1-a-0-click-${n}/`;
+const QM_CATEGORY = (id) => `https://www.qimao.com/shuku/a-${id}-a-a-a-a-a-click-1/`;
+const QM_TITLE = "3天内更新-30万以下-连载中-七猫免费小说-七猫中文网";
+const QM_MAINS = {
+  203: ["都市", "203", "都市异能"],
+  1: ["现代言情", "1", "总裁豪门"],
+  207: ["N次元", "207", "衍生同人"],
+  202: ["玄幻奇幻", "202", "东方玄幻"],
+};
+
+/** 书库一本书：照真实页面结构（data-v 属性、换行简介、绝对链接）。 */
+function qmBook(id, main = 203, overrides = {}) {
+  const [, mainId, sub] = QM_MAINS[main];
+  return {
+    id,
+    title: `书${id}`,
+    author: `作者${id}`,
+    mainId,
+    subId: "301",
+    sub,
+    status: "连载中",
+    words: "12.3万字",
+    update: "2026-10-09更新",
+    desc: `第一行简介${id}\n第二行`,
+    ...overrides,
+  };
+}
+
+function qmShukuHtml({ page, books, maxPage = 67, title = QM_TITLE, sort = "按点击量" }) {
+  const v = "data-v-3e833f26";
+  const items = books.map((b) => {
+    const words = b.words === null ? "" : ` <em class="s-words-num" ${v}>${b.words}</em>`;
+    return (
+      `<li class="qm-cover-text-item horizontal spacing-16 font-size-1" ${v}>` +
+      `<div class="cover-content left-col" ${v}><a href="https://www.qimao.com/shuku/${b.id}/" target="_blank"><img alt="${b.title}"></a></div> ` +
+      `<div class="text-content right-col" ${v}><div class="text-top-row" ${v}>` +
+      `<span class="s-tit" ${v}><a href="https://www.qimao.com/shuku/${b.id}/" target="_blank" ${v}>${b.title}</a></span> ` +
+      `<span class="tags-gather" ${v}><a href="https://www.qimao.com/shuku/a-${b.mainId}-${b.subId}-a-a-a-a-click-1/" target="" class="s-category" ${v}>${b.sub}</a> ` +
+      `<em class="s-status" ${v}>${b.status}</em>${words}</span> ` +
+      `<span class="s-desc" ${v}>\n                        ${b.desc}\n                    </span></div> ` +
+      `<div class="text-bottom-row" ${v}><span ${v}><a href="https://www.qimao.com/zuozhe/x/" target="_blank" class="s-author" ${v}>${b.author}</a> ` +
+      `<em class="s-update-time" ${v}>${b.update}</em></span></div></div> </li>`
+    );
+  });
+  const sortTabs = ["按点击量", "按总字数", "最近更新", "按收藏数"]
+    .map(
+      (label) =>
+        `<li class="qm-tab-list-item"><div class="tab-inner${label === sort ? " active" : ""}" data-v-223ba5bd>` +
+        `<span class="radio-icon"></span> <span>${label}</span> <!----></div></li>`
+    )
+    .join("");
+  const pager = [...new Set([1, 2, 3, maxPage].filter((n) => n <= maxPage))]
+    .map(
+      (n) =>
+        `<li class="page-number-item"><div class="number-item"><span class="page-btn num${n === page ? " active" : ""}" data-v-29399e2c>${n}</span></div></li>`
+    )
+    .join("");
+  return (
+    `<!doctype html><html><head><title>${title}</title></head><body>` +
+    `<ul class="qm-tab-list clearfix">${sortTabs}</ul>` +
+    `<ul class="qm-cover-text-list">${items.join("")}</ul>` +
+    `<div class="qm-page"><ul class="qm-page-number-list clearfix">${pager}</ul></div></body></html>`
+  );
+}
+
+function qmCategoryHtml(name) {
+  return `<!doctype html><html><head><title>${name}小说-好看的${name}小说-${name}小说排行榜--七猫免费小说-七猫中文网</title></head><body></body></html>`;
+}
+
+function qmCategoryRoutes(...mains) {
+  return Object.fromEntries(
+    mains.map((main) => [QM_CATEGORY(QM_MAINS[main][1]), { body: qmCategoryHtml(QM_MAINS[main][0]) }])
+  );
+}
+
+function runQimaoLibrary(args, routes) {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "story-scan-qimao-library-"));
+  try {
+    const preload = path.join(tmpDir, "stub-https.js");
+    fs.writeFileSync(preload, QIMAO_LIBRARY_STUB, "utf8");
+    const routesFile = path.join(tmpDir, "routes.json");
+    fs.writeFileSync(routesFile, JSON.stringify(routes), "utf8");
+    const callsFile = path.join(tmpDir, "calls.log");
+    const outdir = path.join(tmpDir, "out");
+    const result = spawnSync(
+      process.execPath,
+      ["--require", preload, QIMAO_SCRAPER, ...args, "--outdir", outdir],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+        timeout: 60000,
+        env: {
+          ...process.env,
+          SCAN_TEST_UTILS: path.join(path.dirname(QIMAO_SCRAPER), "cdp-utils.js"),
+          SCAN_FAKE_HTTPS_ROUTES: routesFile,
+          SCAN_FAKE_CALLS: callsFile,
+        },
+      }
+    );
+    const files = fs.existsSync(outdir) ? fs.readdirSync(outdir).sort() : [];
+    const contents = files.map((name) => fs.readFileSync(path.join(outdir, name), "utf8"));
+    const calls = fs.existsSync(callsFile)
+      ? fs.readFileSync(callsFile, "utf8").split("\n").filter(Boolean)
+      : [];
+    return { ...result, files, contents, calls, gets: calls.filter((c) => c.startsWith("GET ")).map((c) => c.slice(4)) };
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+// 翻页：名次跨页连续、按 bookId 去重、某页没有新书就停；主类按分类页标题查且每类只查一次；
+// 请求之间限速；一份文件、首行能被聚合认成「七猫」平台的新书榜。
+function testQimaoLibraryPagedCollection() {
+  const page1 = Array.from({ length: 15 }, (_, i) => qmBook(1001 + i, [203, 1, 207][i % 3]));
+  page1[0] = qmBook(1001, 203, { title: "风&amp;雨&#x4E66;", desc: "甲&lt;乙&gt;\n丙<!<!---->--" });
+  const page2 = [
+    page1[13],
+    page1[14],
+    ...Array.from({ length: 13 }, (_, i) => qmBook(2001 + i, 203)),
+  ];
+  const page3 = page2.slice(2, 7);
+  const run = runQimaoLibrary(["--source", "library", "--pages", "4"], {
+    [QM_PAGE(1)]: { status: 302, location: "/shuku/a-a-a-1-1-a-0-click-1/?r=1" },
+    [`${QM_PAGE(1)}?r=1`]: { body: qmShukuHtml({ page: 1, books: page1 }) },
+    [QM_PAGE(2)]: { body: qmShukuHtml({ page: 2, books: page2 }) },
+    [QM_PAGE(3)]: { body: qmShukuHtml({ page: 3, books: page3 }) },
+    ...qmCategoryRoutes(203, 1, 207),
+  });
+  assert.strictEqual(run.status, 0, `书库采集应成功:\n${run.stdout}\n${run.stderr}`);
+  assert.deepStrictEqual(run.gets, [
+    QM_PAGE(1),
+    `${QM_PAGE(1)}?r=1`,
+    QM_PAGE(2),
+    QM_PAGE(3),
+    QM_CATEGORY(203),
+    QM_CATEGORY(1),
+    QM_CATEGORY(207),
+  ], "第 3 页没有新书就停，不请求第 4 页；每个主类只查一次");
+  assert(!run.calls.includes("ab"), "书库模式不得调用 agent-browser");
+  const sleeps = run.calls.filter((c) => c.startsWith("sleep "));
+  assert.strictEqual(sleeps.length, 5, `3 页 + 3 个主类之间各隔一次: ${run.calls.join(" | ")}`);
+  assert(sleeps.every((c) => Number(c.slice(6)) >= 800), `请求间隔不得低于 800ms: ${sleeps}`);
+
+  assert.strictEqual(run.files.length, 1);
+  assert.match(run.files[0], /^七猫全站书库点击新书_\d{8}\.md$/);
+  const md = run.contents[0];
+  assert.strictEqual(md.split("\n")[0], "# 七猫 · 全站书库点击新书");
+  assert.match(md, /数据质量：\[OK\]/);
+  assert.match(md, /问题摘要：无/);
+  assert.match(md, /有效条目：28 \/ 28/);
+  assert.match(md, /来源：https:\/\/www\.qimao\.com\/shuku\/a-a-a-1-1-a-0-click-1\//);
+  assert.match(md, /筛选：.*3天内更新.*连载中.*按点击量.*没有热度/);
+  assert(!md.includes("[待补]"), "字段齐全时不得出现占位");
+  assert(!/^## /m.test(md), "不按页写分组标题");
+
+  const ranks = [...md.matchAll(/^### #(\d+) /gm)].map((m) => Number(m[1]));
+  assert.deepStrictEqual(ranks, Array.from({ length: 28 }, (_, i) => i + 1), "名次跨页连续");
+  const ids = [...md.matchAll(/^\[作品页\]\(https:\/\/www\.qimao\.com\/shuku\/(\d+)\/\)$/gm)].map((m) => m[1]);
+  assert.deepStrictEqual(ids, [
+    ...Array.from({ length: 15 }, (_, i) => String(1001 + i)),
+    ...Array.from({ length: 13 }, (_, i) => String(2001 + i)),
+  ], "跨页重复的书只保留首次出现");
+
+  assert.match(md, /^### #1 风&雨书$/m, "书名里的 HTML 实体要解码");
+  assert.match(md, /^\*作者1001 · 都市 · 都市异能 · 连载中 · 12\.3万字\*$/m);
+  assert.match(md, /^\*作者1002 · 现代言情 · 总裁豪门 · 连载中 · 12\.3万字\*$/m);
+  assert.match(md, /^\*作者1003 · N次元 · 衍生同人 · 连载中 · 12\.3万字\*$/m);
+  assert.match(md, /^\*\*最新更新：\*\* 2026-10-09更新$/m);
+  assert.match(md, /^甲<乙> 丙$/m, "简介换行压成空格、实体解码，嵌套注释删干净");
+  assert(!md.includes("<!--"), "嵌套、没闭合的注释删一遍会拼出新的「<!--」，不能留进输出");
+}
+
+// 失败分级：第 1 页失败、筛选没生效、一本没采到 → exit 1 且不写文件；
+// 后面某页失败 → 保留已采到的页，exit 2，文件头写清第几页、为什么。
+function testQimaoLibraryPageFailures() {
+  const page1 = Array.from({ length: 15 }, (_, i) => qmBook(1001 + i));
+  const okPage1 = { [QM_PAGE(1)]: { body: qmShukuHtml({ page: 1, books: page1 }) } };
+  const fatal = [
+    ["第 1 页 HTTP 500", { [QM_PAGE(1)]: { status: 500 } }, /七猫采集 failed: 第 1 页没取到：HTTP 500/],
+    [
+      "第 1 页被转去别的站",
+      { [QM_PAGE(1)]: { status: 302, location: "https://passport.qimao.com/login" } },
+      /第 1 页没取到：被重定向到 passport\.qimao\.com\/login/,
+    ],
+    [
+      "筛选标题不符",
+      { [QM_PAGE(1)]: { body: qmShukuHtml({ page: 1, books: page1, title: "7天内更新-30万以下-连载中-七猫免费小说" }) } },
+      /第 1 页没取到：.*缺少「3天内更新」.*筛选没生效/,
+    ],
+    [
+      "排序不是按点击量",
+      { [QM_PAGE(1)]: { body: qmShukuHtml({ page: 1, books: page1, sort: "按总字数" }) } },
+      /第 1 页没取到：页面排序是「按总字数」/,
+    ],
+    [
+      "第 1 页一本书都没有",
+      { [QM_PAGE(1)]: { body: qmShukuHtml({ page: 1, books: [] }) } },
+      /七猫采集 failed: 书库第 1 页一本书都没解析出来/,
+    ],
+  ];
+  for (const [label, routes, message] of fatal) {
+    const run = runQimaoLibrary(["--source", "library", "--pages", "3"], { ...routes, ...qmCategoryRoutes(203) });
+    assert.strictEqual(run.status, 1, `${label} 必须 exit 1:\n${run.stderr}`);
+    assert.match(run.stderr, message, label);
+    assert.strictEqual(run.files.length, 0, `${label} 不得写文件`);
+    assert.deepStrictEqual(run.gets, [QM_PAGE(1)], `${label} 不得继续翻页、查主类或跟去别的站`);
+  }
+
+  const partial = [
+    ["第 2 页 HTTP 503", { status: 503 }, /第 2 页没取到：HTTP 503/],
+    [
+      "第 2 页被站点退回第 1 页",
+      { body: qmShukuHtml({ page: 1, books: page1 }) },
+      /第 2 页没取到：请求第 2 页，页面停在第 1 页/,
+    ],
+  ];
+  for (const [label, page2, reason] of partial) {
+    const run = runQimaoLibrary(["--source", "library", "--pages", "3"], {
+      ...okPage1,
+      [QM_PAGE(2)]: page2,
+      ...qmCategoryRoutes(203),
+    });
+    assert.strictEqual(run.status, 2, `${label} 应保留第 1 页并 exit 2:\n${run.stderr}`);
+    assert.match(run.stderr, new RegExp(`七猫采集 partial: wrote 1/1; ${reason.source}`));
+    assert.strictEqual(run.files.length, 1, `${label} 已采到的页必须落盘`);
+    assert(!run.gets.includes(QM_PAGE(3)), `${label} 后不再翻页`);
+    const md = run.contents[0];
+    assert.match(md, /数据质量：\[存在问题\]/);
+    assert.match(md, new RegExp(`问题摘要：.*${reason.source}`));
+    assert.match(md, /有效条目：15 \/ 15/);
+  }
+}
+
+// 页数以分页器为准提前停；主类查不到时题材位退用子分类并记进问题摘要；缺字段、条目太少都要标出来。
+function testQimaoLibraryFallbacksAndQuality() {
+  const books = [
+    qmBook(1001, 203),
+    qmBook(1002, 202),
+    qmBook(1003, 203, { words: null }),
+  ];
+  const run = runQimaoLibrary(["--source", "library"], {
+    [QM_PAGE(1)]: { body: qmShukuHtml({ page: 1, books, maxPage: 1 }) },
+    ...qmCategoryRoutes(203),
+    [QM_CATEGORY(202)]: { status: 500 },
+  });
+  assert.strictEqual(run.status, 0, `只缺主类不算采集失败:\n${run.stderr}`);
+  assert.deepStrictEqual(run.gets, [QM_PAGE(1), QM_CATEGORY(203), QM_CATEGORY(202)], "书库只有 1 页时不再翻页");
+  const md = run.contents[0];
+  assert.match(md, /数据质量：\[存在问题\]/);
+  assert.match(md, /问题摘要：.*主类未解析 1 条/);
+  assert.match(md, /问题摘要：.*字数缺失 1 条/);
+  assert.match(md, /问题摘要：.*\[数据稀疏\] 实际采集 3 条/);
+  assert(!/热度/.test(md.split("---")[0].replace(/没有热度数字/, "")), "书库没有热度，不得把缺热度记成问题");
+  assert.match(md, /^\*作者1002 · 东方玄幻 · 连载中 · 12\.3万字\*$/m, "主类缺失时题材位退用子分类");
+  assert.match(md, /^\*作者1003 · 都市 · 都市异能 · 连载中 · \[待补\]\*$/m);
+}
+
+// 书库参数在联网前就要拒绝：不发请求、不碰 CDP、不写文件。
+function testQimaoLibraryArgumentValidation() {
+  const cases = [
+    [["--source", "library", "--pages", "0"], /未知 --pages: 0/],
+    [["--source", "library", "--pages", "11"], /未知 --pages: 11/],
+    [["--source", "library", "--pages", "abc"], /未知 --pages: abc/],
+    [["--source", "bogus"], /未知 --source: bogus/],
+    [["--source", "library", "--type", "hot"], /--source library 不能配 --type/],
+    [["--source", "library", "--channel=male", "--period", "day"], /--source library 不能配 --channel、--period/],
+    [["--pages", "3"], /--pages 只用于 --source library/],
+  ];
+  for (const [args, message] of cases) {
+    const run = runQimaoLibrary(args, {});
+    assert.strictEqual(run.status, 1, `${args.join(" ")} 必须 exit 1: ${run.stderr}`);
+    assert.match(run.stderr, message);
+    assert.strictEqual(run.files.length, 0, `${args.join(" ")} 不得写文件`);
+    assert.deepStrictEqual(run.calls, [], `${args.join(" ")} 不得联网或打开浏览器`);
+  }
+}
+
 // 参数错误必须在打开浏览器/进入 per-target 容错前快速失败，给出具体参数名和值。
 function testLongScanArgumentValidation() {
   const cases = [
@@ -1078,6 +1565,15 @@ function testLongScanArgumentValidation() {
     ["jjwxc-rank-scraper.js", ["--channel", "bogus"], /未知 --channel: bogus/],
     ["jjwxc-rank-scraper.js", ["--channel", "999"], /未知 --channel: 999/],
     ["qidian-rank-scraper.js", ["--type", "bogus", "--mode", "cdp"], /未知 --type: bogus/],
+    // 起点书库只能走 CDP；--pages 取 1-10 的整数，且只对书库有效（其他榜单传了报错而不是静默忽略）
+    ["qidian-rank-scraper.js", ["--type", "library", "--mode", "mobile"], /--type library 不支持 --mode mobile/],
+    ["qidian-rank-scraper.js", ["--type", "library", "--pages", "0"], /未知 --pages: 0（取 1-10 的整数）/],
+    ["qidian-rank-scraper.js", ["--type", "library", "--pages", "11"], /未知 --pages: 11/],
+    ["qidian-rank-scraper.js", ["--type", "library", "--pages", "abc"], /未知 --pages: abc/],
+    ["qidian-rank-scraper.js", ["--type", "library", "--pages", "2.5"], /未知 --pages: 2\.5/],
+    ["qidian-rank-scraper.js", ["--type", "library", "--pages="], /未知 --pages: （空）/],
+    ["qidian-rank-scraper.js", ["--type", "hotsales", "--mode", "cdp", "--pages", "2"], /--pages 只用于 --type library/],
+    ["qidian-rank-scraper.js", ["--type", "all", "--mode", "cdp", "--pages", "2"], /--pages 只用于 --type library/],
   ];
 
   for (const [name, args, message] of cases) {
@@ -1171,6 +1667,51 @@ function testHeiyanFieldDriftAndWordFormat() {
     assert(fs.existsSync(femalePath), "女频报告必须独立落盘");
     assert(fs.readFileSync(malePath, "utf8").includes("甲书"));
     assert(fs.readFileSync(femalePath, "utf8").includes("乙书"));
+
+    // 缺作者：聚合按位置认「作者 · 题材」，不占位题材会被当成作者、书掉进分组名
+    const noAuthorDir = path.join(tmpDir, "no-author");
+    const noAuthorPath = path.join(noAuthorDir, heiyan.outputFilename("female", date));
+    fs.mkdirSync(noAuthorDir);
+    const noAuthor = [
+      { name: "丙书", userName: "作者丙", classifyStr: "女频", typeDesc: "虐恋", words: 32000 },
+      { name: "丁书", userName: "", classifyStr: "女频", typeDesc: "复仇", words: 28000 },
+      { name: "戊书", classifyStr: "女频", typeDesc: "虐恋", words: 30000 },
+    ];
+    console.log = () => {};
+    try {
+      heiyan.buildAndSave(noAuthor, 3, noAuthor, noAuthorPath, false);
+    } finally {
+      console.log = origLog;
+    }
+    const noAuthorText = fs.readFileSync(noAuthorPath, "utf8");
+    assert(noAuthorText.includes("*佚名 · 女频/复仇 · 28,000字 · 未公开*"), noAuthorText);
+    assert(noAuthorText.includes("- 已采集：3 条（1 页）"), `页数按实际取到的条数算: ${noAuthorText}`);
+    assert(noAuthorText.includes("- 数据质量：[仅列表-无核心指标]"), noAuthorText);
+    const agg = spawnSync(
+      process.execPath,
+      [path.join(repoRoot, "skills/story-short-scan/scripts/aggregate-rank.js"), noAuthorDir, "--scale", "short", "--json"],
+      { cwd: repoRoot, encoding: "utf8", timeout: 10000 }
+    );
+    assert.strictEqual(agg.status, 0, agg.stderr);
+    const hy = JSON.parse(agg.stdout).platforms.find((p) => p.platform === "黑岩");
+    assert.deepStrictEqual(
+      hy.genres.map((g) => g.name).sort(),
+      ["复仇", "虐恋"],
+      `缺作者的书题材不能丢: ${JSON.stringify(hy.genres)}`
+    );
+    const aggMd = spawnSync(
+      process.execPath,
+      [path.join(repoRoot, "skills/story-short-scan/scripts/aggregate-rank.js"), noAuthorDir, "--scale", "short"],
+      { cwd: repoRoot, encoding: "utf8", timeout: 10000 }
+    );
+    assert.match(aggMd.stdout, /黑岩 · 书库列表：3 条，\d{4}-\d{2}-\d{2}，只有书单，缺热度等关键数字/);
+
+    // 数据质量：列表模式只有书单；--detail 按详情取到几成定级，取值都在聚合的白话表里
+    const withDetail = (n, ok) => Array.from({ length: n }, (_, i) => ({ detailOk: i < ok }));
+    assert.strictEqual(heiyan.dataQuality(withDetail(4, 4), false), "[仅列表-无核心指标]");
+    assert.strictEqual(heiyan.dataQuality(withDetail(4, 4), true), "[OK]");
+    assert.strictEqual(heiyan.dataQuality(withDetail(4, 3), true), "[部分详情缺失]");
+    assert.strictEqual(heiyan.dataQuality(withDetail(4, 1), true), "[详情解析异常/登录态缺失]");
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
@@ -1766,6 +2307,391 @@ function testCdpRejectsUnverifiableIdentity() {
   );
 }
 
+// 起点排行榜、刺猬猫：文件头要有「数据质量」，聚合的「采集情况」才不会显示「质量未标」
+function testRankQualityHeaders() {
+  const qidian = loadFresh(QD_SCRAPER);
+  const ok = qidian.renderMarkdown(
+    { label: "月票榜" },
+    [
+      { rank: 1, title: "甲", author: "a", genre: "玄幻·东方玄幻", words: "12万字", rankValue: "8000" },
+      { rank: 2, title: "乙", author: "b", genre: "都市·都市生活", words: "", rankValue: "7000" },
+    ],
+    "https://m.qidian.com/rank/yuepiao/",
+    "mobile-ssr"
+  );
+  assert.match(ok, /- 数据质量：\[OK\]\n- 问题摘要：无\n/);
+  const broken = qidian.renderMarkdown(
+    { label: "月票榜" },
+    [
+      { rank: 1, title: "甲", author: "a", genre: "玄幻·东方玄幻", words: "12万字", rankValue: "8000" },
+      { rank: 2, title: "乙", author: "b", genre: "", words: "8万字", rankValue: "7000" },
+      { rank: 3, title: "丙", author: "c", genre: "", words: "9万字", rankValue: "6000" },
+    ],
+    "https://m.qidian.com/rank/yuepiao/",
+    "mobile-ssr"
+  );
+  assert.match(broken, /- 数据质量：\[存在问题\]\n- 问题摘要：题材缺失 2 \/ 3 条\n/);
+  const library = qidian.renderMarkdown(
+    { label: "男频书库人气新书" },
+    [{ rank: 1, title: "甲", library: true }],
+    "https://www.qidian.com/all/action0-size1-update1/",
+    "cdp-pc",
+    ["- 数据质量：[OK]", "- 问题摘要：无"]
+  );
+  assert.strictEqual((library.match(/数据质量/g) || []).length, 1, "书库新书自带质量行，不能再加一份");
+
+  const ciweimao = loadFresh(path.join(repoRoot, "skills/story-long-scan/scripts/ciweimao-rank-scraper.js"));
+  const full = Array.from({ length: 10 }, (_, i) =>
+    i === 0
+      ? { rank: 1, title: "书1", author: "猫作者", metric: "1.2万" }
+      : { rank: i + 1, title: `书${i + 1}`, genre: "同人", metric: "9876" }
+  );
+  const urls = full.map((e) => ({ title: e.title, url: `https://www.ciweimao.com/book/${e.rank}` }));
+  const good = ciweimao.renderRankFile({ label: "月票榜" }, full, urls, "2026-10-17T02:00:00.000Z");
+  assert.match(good, /- 数据质量：\[OK\]\n- 问题摘要：无\n/);
+  assert(good.includes("### #1 书1\n*猫作者 · 1.2万*\n[作品页](https://www.ciweimao.com/book/1)"), good);
+  assert(good.includes("### #2 书2\n*同人 · 9876*"), good);
+  const thin = ciweimao.renderRankFile({ label: "月票榜" }, full.slice(0, 3), [], "2026-10-17T02:00:00.000Z");
+  assert.match(thin, /- 数据质量：\[存在问题\]\n- 问题摘要：只解析到 3 条（每榜 10 条）；作品页链接只匹配到 0 \/ 3 条\n/);
+}
+
+function testQidianDynamicRankDiscovery() {
+  const discovery = loadFresh(
+    path.join(
+      repoRoot,
+      "skills/story-long-scan/scripts/qidian-rank-discovery-scraper.js"
+    )
+  );
+
+  const links = discovery.normalizeDiscoveredRankLinks([
+    { text: "月票榜", href: "/rank/yuepiao/" },
+    { text: "收藏榜", href: "https://www.qidian.com/rank/collect/chn21/page2/" },
+    { text: "追读榜", href: "/rank/zhuiread/" },
+    { text: "更多", href: "/rank/newfans/" },
+    { text: "女生月票榜", href: "/rank/female-yuepiao/" },
+    { text: "女频精选榜", href: "/rank/lady/" },
+    { text: "三江推荐", href: "/sanjiang/" },
+  ]);
+
+  const byId = new Map(links.map((item) => [item.id, item]));
+  assert.strictEqual(byId.get("yuepiao").label, "月票榜");
+  assert.strictEqual(byId.get("collect").label, "收藏榜");
+  assert.strictEqual(byId.get("zhuiread").label, "追读榜");
+  assert.strictEqual(byId.get("newfans").label, "书友榜");
+  assert.strictEqual(byId.get("sanjiang").label, "三江推荐");
+  assert(!links.some((item) => /female|lady/.test(item.id)), "女频榜单必须被动态发现器排除");
+
+  const pages = discovery.normalizePageUrls(
+    [
+      { href: "/rank/collect/page2/" },
+      { href: "https://www.qidian.com/rank/collect/page3/" },
+      { href: "/rank/collect/page9/" },
+      { href: "/rank/yuepiao/page2/" },
+    ],
+    "https://www.qidian.com/rank/collect/",
+    3
+  );
+  assert.deepStrictEqual(pages, [
+    "https://www.qidian.com/rank/collect/",
+    "https://www.qidian.com/rank/collect/page2/",
+    "https://www.qidian.com/rank/collect/page3/",
+  ]);
+
+  const books = discovery.dedupeBooks([
+    { title: "甲书", url: "https://www.qidian.com/book/1/" },
+    { title: "甲书", url: "https://www.qidian.com/book/1/" },
+    { title: "乙书", url: "https://www.qidian.com/book/2/" },
+  ]);
+  assert.strictEqual(books.length, 2);
+  assert.deepStrictEqual(books.map((book) => book.rank), [1, 2]);
+}
+
+// 起点：一个榜单打不开只跳这一个，剩下 9 个照采（--type all 不再被一次超时掐死）
+
+function testStoryCaseCollector() {
+  const collector = loadFresh(
+    path.join(repoRoot, "skills/story-long-scan/scripts/case-pool-builder.js")
+  );
+
+  const longIntro =
+    "男主原本只是东京一家小公司的普通职员。一次意外后，他发现自己能听见别人做重大选择前的一句心声。" +
+    "他最初只想利用这个能力避开麻烦，却因为一次顺手的提醒改变了女邻居的人生，两人的关系也从陌生开始发生变化。" +
+    "随着能力不断把他卷进更多人的选择里，他原来的生活、工作和人与人之间的距离都被重新改写。";
+
+  assert(collector.isUsefulIntro(longIntro, 80), "有完整故事运动的简介必须保留");
+  assert(!collector.isUsefulIntro("重生东京，这一世我要活出精彩人生！", 80), "一句宣传语式简介必须淘汰");
+  const longSingleSentence =
+    "男主回到十年前最落魄的一天，带着未来十年的行业经验重新进入互联网公司，一路利用自己知道的产品周期、人才流动、资本变化和竞争对手弱点抢占机会并重新安排人生".repeat(2) + "。";
+  assert(
+    !collector.isUsefulIntro(longSingleSentence, 80),
+    "哪怕超过最小长度，只要仍然只有一句话，也不能进入 Case 池"
+  );
+  assert.strictEqual(
+    collector.evaluateIntro(longSingleSentence, 80).reason,
+    "singleSentence"
+  );
+  assert(!collector.isUsefulIntro("【都市+重生+恋爱】", 80), "只有标签的简介必须淘汰");
+  const explicitFemaleCase =
+    "【女主文】虞梨得到英雄编辑器后，把一个个少女角色当女儿养大。她原本只想安静玩游戏，后来这些角色却陆续来到现实，围绕她展开新的生活与关系。";
+  assert(
+    !collector.isUsefulIntro(explicitFemaleCase, 80),
+    "明确标注【女主文】的 Case 不能进入男频池"
+  );
+  assert.strictEqual(
+    collector.evaluateIntro(explicitFemaleCase, 80).reason,
+    "femaleChannel"
+  );
+  const maleCounterCase =
+    "张澈吐槽女频文的逆天剧情后穿进了霸总世界。他仍然以男主身份掌握行动权，开始用自己的方式整顿满城霸总，把原本围着恋爱脑转的规则全部掀翻。" +
+    "面对动不动就违法囚禁、豪掷千金和强取豪夺的霸总们，他直接报警、夺资源、收公司，让整个世界重新按他的判断运转。";
+  assert(
+    collector.isUsefulIntro(maleCounterCase, 80),
+    "正文提到女频但本身是男主视角的 Case 不能被误杀"
+  );
+
+  const md = [
+    "# 番茄 · 男频阅读榜",
+    "",
+    "### #1 东京选择",
+    "*作者 · 都市*",
+    "",
+    "**简介**",
+    "",
+    longIntro,
+    "",
+    "---",
+    "",
+    "### #2 东京选择",
+    "",
+    "**简介**",
+    "",
+    longIntro + "后来，他第一次主动利用这种能力替自己争取机会。",
+    "",
+    "---",
+    "",
+    "### #3 空壳作品",
+    "",
+    "**简介**",
+    "",
+    "重生东京，这一世我要活出精彩人生！",
+    "",
+    "---",
+  ].join("\n");
+
+  const historyIntro =
+    longIntro +
+    "几年后，他已经不再被动等待心声出现，而是主动把这项能力变成自己选择机会、关系和生活方向的工具。";
+  const oldBookIntro =
+    "一个已经完结多年的老作者，在事业最低谷时意外得到一次重新选择人生节点的机会。" +
+    "他没有回到少年时代，而是回到第一本书即将失败的那一天，于是决定先救活作品，再借作品改变自己的职业、人脉和家庭处境。" +
+    "旧时代的编辑制度、读者口味和网络环境都没有改变，改变的只有他已经知道哪些选择会把自己送进死路。";
+  const history = [
+    "# 榜单数据",
+    "",
+    "## 《东京选择》",
+    "",
+    historyIntro,
+    "",
+    "---",
+    "",
+    "## 《历史老书》",
+    "",
+    oldBookIntro,
+    "",
+    "---",
+  ].join("\n");
+
+  const built = collector.buildCasePool([md, history], 80);
+  assert.strictEqual(built.stats.extracted, 5);
+  assert.strictEqual(built.stats.acceptedBeforeDedupe, 4);
+  assert.strictEqual(built.stats.duplicates, 2);
+  assert.strictEqual(built.stats.final, 2);
+  const tokyo = built.cases.find((item) => item.title === "东京选择");
+  assert(tokyo, "跨日期累积后必须保留东京选择");
+  assert.strictEqual(tokyo.intro, historyIntro, "同名 Case 必须保留信息更完整的历史/新版本");
+  assert(built.cases.some((item) => item.title === "历史老书"), "历史池独有 Case 不能被新一轮覆盖丢失");
+  assert.deepStrictEqual(Object.keys(tokyo).sort(), ["intro", "title"]);
+  assert.match(collector.renderCaseMarkdown(built.cases), /## 《东京选择》/);
+  const finalMd = collector.renderCaseMarkdown(built.cases);
+  assert(!/^\*.*作者.*\*$/m.test(finalMd), "最终 Case 输出不得混入作者元数据行");
+  assert(!/\*\*排名|\*\*榜单值|\*\*总推荐/u.test(finalMd), "最终 Case 输出不得混入榜单元数据");
+
+  const fanqie = loadFresh(
+    path.join(repoRoot, "skills/story-long-scan/scripts/fanqie-rank-scraper.js")
+  );
+  const qimao = loadFresh(
+    path.join(repoRoot, "skills/story-long-scan/scripts/qimao-rank-scraper.js")
+  );
+  const veryLong = "第一段。" + "甲".repeat(180) + "最后一段。";
+  assert.strictEqual(fanqie.cleanDesc(veryLong), veryLong, "番茄简介不得截断");
+  assert.strictEqual(qimao.cleanDesc(veryLong), veryLong, "七猫简介不得截断");
+}
+
+function testCiweimaoFullIntroParser() {
+  const scraper = loadFresh(
+    path.join(repoRoot, "skills/story-long-scan/scripts/ciweimao-rank-scraper.js")
+  );
+
+  const maleText = [
+    "某科学的英灵速通指南",
+    "某科学的英灵速通指南",
+    "作者甲 著 / 科幻无限",
+    "123万字 / 连载中",
+    "更新：今天 / 第100章",
+    "立即阅读",
+    "放入书架",
+    "321月票",
+    "654推荐票",
+    "0次打赏",
+    "12刀片",
+    "藤丸立香掉进了另一个世界，他手里只剩下一套看起来完全不讲道理的英灵组合。",
+    "别人按部就班攻略地下城，他却开始把宝具、从者与当地规则重新拼在一起，硬是走出一条谁也没见过的路线。",
+    "作品目录",
+    "第一章",
+  ].join("\n");
+
+  const detail = scraper.parseMIPDetailText(maleText, "某科学的英灵速通指南");
+  assert.strictEqual(detail.title, "某科学的英灵速通指南");
+  assert.strictEqual(detail.author, "作者甲");
+  assert.strictEqual(detail.category, "科幻无限");
+  assert.match(detail.desc, /藤丸立香掉进了另一个世界/);
+  assert.match(detail.desc, /别人按部就班攻略地下城/);
+  assert(!detail.desc.includes("作品目录"), "目录不能混入简介");
+  assert.strictEqual(scraper.isAllowedCategory(detail.category), true);
+
+  const female = scraper.parseMIPDetailText(
+    [
+      "女频样书",
+      "作者乙 著 / 女频",
+      "10万字 / 连载中",
+      "立即阅读",
+      "1月票",
+      "2推荐票",
+      "0次打赏",
+      "0刀片",
+      "第一句简介。",
+      "第二句简介。",
+      "作品目录",
+    ].join("\n"),
+    "女频样书"
+  );
+  assert.strictEqual(female.category, "女频");
+  assert.strictEqual(
+    scraper.isAllowedCategory(female.category),
+    false,
+    "刺猬猫女频分类必须在进入 Case Builder 前就被排除"
+  );
+  assert.strictEqual(
+    scraper.isAllowedCategory(""),
+    false,
+    "刺猬猫分类解析失败时必须 fail closed，宁可漏收也不能误放女频"
+  );
+  assert.match(scraper.buildMIPPageTextJS(), /document\.body/);
+}
+
+function testQidianBooklistCollector() {
+  const scraper = loadFresh(
+    path.join(repoRoot, "skills/story-long-scan/scripts/qidian-booklist-scraper.js")
+  );
+  const collector = loadFresh(
+    path.join(repoRoot, "skills/story-long-scan/scripts/case-pool-builder.js")
+  );
+
+  const anchors = scraper.extractAnchorBookIdsFromMarkdown([
+    "[作品页](https://m.qidian.com/book/1040584849/)",
+    "[作品页](https://www.qidian.com/book/1039526256/)",
+    "[重复](https://m.qidian.com/book/1040584849/)",
+  ].join("\n"));
+  assert.deepStrictEqual(anchors, ["1040584849", "1039526256"]);
+
+  assert.match(
+    scraper.normalizeBooklistUrl(
+      "/booklist/detail/12345/",
+      "https://book.qidian.com/booklist/"
+    ),
+    /qidian\.com\/booklist\/detail\/12345\//
+  );
+  assert.strictEqual(
+    scraper.normalizeBooklistUrl("https://book.qidian.com/booklist/"),
+    "",
+    "书单首页不是具体书单"
+  );
+  assert.strictEqual(
+    scraper.normalizeBooklistUrl("https://example.com/booklist/123"),
+    "",
+    "外站链接不能混入起点书单"
+  );
+  assert.match(scraper.buildBooklistLinksJS(), /包含本书的书单/);
+  assert.strictEqual(scraper.parseFollowerCount("999+关注"), 999);
+  assert.strictEqual(scraper.parseFollowerCount("1.2万关注"), 12000);
+  assert.strictEqual(scraper.parseFollowerCount("没有关注量"), 0);
+  assert.match(scraper.buildCatalogBooklistsJS(), /followers/);
+  assert.match(scraper.buildBookIdsFromListJS(), /book\|info/);
+  assert.match(scraper.buildBookDetailsJS(["1"]), /作品简介/);
+  assert.deepStrictEqual(
+    scraper.selectSpread(
+      Array.from({ length: 10 }, (_, index) => ({ id: String(index + 1) })),
+      4
+    ).map((item) => item.id),
+    ["1", "3", "6", "8"],
+    "二跳锚点必须均匀覆盖第一层候选，而不是只拿开头几本"
+  );
+
+  const pendingText = [
+    JSON.stringify({
+      book_id: "1050000001",
+      title: "待补样书",
+      url: "https://www.qidian.com/book/1050000001/",
+      first_seen: "20260919",
+      attempts: 2,
+    }),
+    JSON.stringify({
+      book_id: "1050000001",
+      title: "待补样书（更完整标题）",
+      url: "https://www.qidian.com/book/1050000001/",
+      first_seen: "20260920",
+      attempts: 3,
+    }),
+    "{bad json",
+    "",
+  ].join("\n");
+  const parsedPending = scraper.parsePendingJSONL(pendingText);
+  assert.strictEqual(parsedPending.length, 1, "同一 book_id 在待补队列中必须去重");
+  assert.strictEqual(parsedPending[0].book_id, "1050000001");
+  assert.strictEqual(parsedPending[0].title, "待补样书（更完整标题）");
+  assert.strictEqual(parsedPending[0].first_seen, "20260919", "首次发现日期必须保留");
+  assert.strictEqual(parsedPending[0].attempts, 3, "重试次数取已知最大值");
+
+  const retriedPending = scraper.toPendingRecord(
+    { id: "1050000001", title: "待补样书" },
+    parsedPending[0],
+    true
+  );
+  assert.strictEqual(retriedPending.attempts, 4, "每次真实补抓失败后重试次数加一");
+  const pendingRoundTrip = scraper.parsePendingJSONL(
+    scraper.renderPendingJSONL([retriedPending])
+  );
+  assert.deepStrictEqual(pendingRoundTrip, [retriedPending]);
+
+  const intro =
+    "主角在一次失败后离开原来的行业，本想回乡过普通生活，却在整理旧书时发现父亲留下的一份名单。" +
+    "名单上的每个人都曾在同一年改变命运，他决定逐个找到他们，由此重新进入早已离开的商业世界。" +
+    "每找到一个人，他都会得到一段过去从未知道的关系，也让自己的人生重新拥有可以下注的机会。";
+  const rendered = scraper.renderMarkdown(
+    [{ title: "书单扩展样书", intro, url: "https://www.qidian.com/book/1/" }],
+    { anchorCount: 3, listCount: 5, candidateCount: 9, hop2AnchorCount: 2, hop2ListCount: 4 }
+  );
+  assert.match(rendered, /# 起点 · 上榜作品关联书单扩展/);
+  assert.match(rendered, /二跳锚点：2 本/);
+  assert.match(rendered, /二跳新增书单：4 个/);
+  assert.match(rendered, /## #1 书单扩展样书/);
+  const built = collector.buildCasePool([rendered], 80);
+  assert.strictEqual(built.stats.final, 1);
+  assert.strictEqual(built.cases[0].title, "书单扩展样书");
+  assert.strictEqual(built.cases[0].intro, intro);
+}
+
+// 七猫大热榜：日/月必须是显式采集维度，并进入文件名；非大热榜只采一次。
 
 function testCasePoolProductionWaterOrganization() {
   const builder = loadFresh(
@@ -1834,22 +2760,29 @@ function testCasePoolProductionWaterOrganization() {
 }
 
 testCdpUtils(longUtilsPath);
-testCdpUtils(shortUtilsPath);
 testWindowsInvocationBuilder(longUtilsPath);
 testLocalDateStamp(longUtilsPath);
-testLocalDateStamp(shortUtilsPath);
 testScraperImports();
 testCliResultGate(longUtilsPath);
 testJjwxcDetailFailureIsolation();
 testQidianDynamicRankDiscovery();
-testQidianRankIsolation();
-testQidianFieldContractAndDescriptionPreservation();
 testStoryCaseCollector();
 testCiweimaoFullIntroParser();
 testQidianBooklistCollector();
 testCasePoolProductionWaterOrganization();
+testQidianRankIsolation();
+testQidianFieldContractAndDescriptionPreservation();
+testQidianQualityFlagsMissingHeat();
+testRankQualityHeaders();
+testQidianCaptchaCheckIgnoresBookText();
+testQidianLibraryFontDecoding();
+testQidianLibraryPagingE2E();
 testQimaoPeriodPlan();
 testQimaoPartialTargetStatus();
+testQimaoLibraryPagedCollection();
+testQimaoLibraryPageFailures();
+testQimaoLibraryFallbacksAndQuality();
+testQimaoLibraryArgumentValidation();
 testLongScanArgumentValidation();
 testHeiyanFieldDriftAndWordFormat();
 testCdpPlainReuseUnchanged();

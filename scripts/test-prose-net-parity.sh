@@ -2,8 +2,9 @@
 # test-prose-net-parity.sh — 正文兜底「轻量确定性网」四端 parity 守卫
 # 网有两份运行实现：Codex `story_codex_hook.py` 与共享 JS core；Claude、OpenCode、ZCode
 # 消费各自的同字节 core 副本。本测试四层保证：
-#   A. 功能 parity：codex python 网、opencode TS 网、
-#      zcode JS 网在同一组 fixture 上逐字相等。
+#   A. 功能 parity：codex python 网与 JS core 网（经 zcode 入口加载）在同一组 fixture 上
+#      逐字相等。OpenCode/Claude 的核是同字节副本（check-shared-files.sh），plugin.ts 能否
+#      按部署布局加载并调到核由 test-opencode-plugin.mjs 覆盖，这里不重复跑。
 #   B. 命令函数 parity（CI 硬保证）：正文目标抽取、apply-patch 目标、git commit 侦测三个纯函数
 #      在 codex python 与 zcode JS 间逐字相等——锁住此前无守卫、已漂移的手抄逻辑。
 #   C. 未归核面 parity（CI 硬保证）：staged markdown warnings 与大纲阻断判定未归核——codex
@@ -21,25 +22,21 @@ ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
 [ -z "$ROOT" ] && { echo "Error: not in a git repository" >&2; exit 1; }
 
 CODEX="$ROOT/skills/story-setup/references/codex/hooks/story_codex_hook.py"
-OPENCODE="$ROOT/skills/story-setup/references/opencode/plugin.ts"
 ZCODE="$ROOT/skills/story-setup/references/zcode/hooks/story_zcode_hook.js"
 ZCODE_CORE="$ROOT/skills/story-setup/references/zcode/hooks/story_hook_core.js"
-OPENCODE_CORE="$ROOT/skills/story-setup/references/opencode/story_hook_core.js"
 CLAUDE_CORE="$ROOT/skills/story-setup/references/templates/hooks/story_hook_core.js"
 CLAUDE_COMMIT="$ROOT/skills/story-setup/references/templates/hooks/validate-story-commit.sh"
 CLAUDE_GAPS="$ROOT/skills/story-setup/references/templates/hooks/detect-story-gaps.sh"
 CLAUDE_GUARD="$ROOT/skills/story-setup/references/templates/hooks/guard-outline-before-prose.sh"
 CLAUDE_HOOK_CLI="$ROOT/skills/story-setup/references/templates/hooks/story_hook_cli.js"
 STORYCTL="$ROOT/skills/story-long-write/scripts/storyctl.py"
-for f in "$CODEX" "$OPENCODE" "$ZCODE" "$ZCODE_CORE" "$OPENCODE_CORE" "$CLAUDE_CORE" "$CLAUDE_COMMIT" "$CLAUDE_GAPS" "$CLAUDE_GUARD" "$CLAUDE_HOOK_CLI" "$STORYCTL"; do
+for f in "$CODEX" "$ZCODE" "$ZCODE_CORE" "$CLAUDE_CORE" "$CLAUDE_COMMIT" "$CLAUDE_GAPS" "$CLAUDE_GUARD" "$CLAUDE_HOOK_CLI" "$STORYCTL"; do
   [ -f "$f" ] || { echo "FAIL: missing impl: $f" >&2; exit 1; }
 done
 
 fails=0
 
-# ── A. 功能 parity（codex python 网 vs opencode TS 网） ──
-# TS 运行：优先 node 原生类型擦除（node ≥ 22.6 的 --experimental-strip-types），否则用本机 esbuild；
-# 都没有时只跳过 OpenCode plugin 直跑，Codex ↔ ZCode 行为 parity 仍执行。
+# ── A. 功能 parity（codex python 网 vs JS core 网） ──
 run_functional() {
   command -v node >/dev/null 2>&1 || return 1
   command -v python3 >/dev/null 2>&1 || return 1
@@ -95,7 +92,14 @@ run_functional() {
   "toxic_trailer": "他放下麦克风朝台下鞠了一躬。\n没人知道，这才刚刚开头。",
   "toxic_trailer_summary": "他放下麦克风朝台下鞠了一躬。\n这一切都结束了。",
   "toxic_trailer_summary_fate": "她把账单折好塞回包里。\n这一夜注定无人入眠。",
-  "toxic_bare_realize_ok": "那一刻我终于明白，母亲当年为什么总在夜里哭。\n我抓起外套就往门口走。",
+  "toxic_trailer_summary_sozhe": "他把钥匙交了出去。\n就这样，一切都结束了。",
+  "toxic_trailer_summary_new_chapter": "他收拾好行李。\n新的篇章就此开始。",
+  "toxic_trailer_summary_fate_gear": "他握紧了那枚铜钱。\n命运的齿轮开始转动。",
+  "toxic_trailer_shubuzhi": "他笑着把门关上。\n殊不知门外早有人等着。",
+  "toxic_trailer_imminent": "城门缓缓合拢。\n一场大战即将来临。",
+  "toxic_trailer_pressing": "他站在城头往下看。\n黑压压的军阵正朝着城门压过去。",
+  "toxic_trailer_alternatives": "他走了。\n谁也不知道他去了哪里。\n谁也没想到会是他。\n这才刚刚开始。\n一场好戏拉开序幕。\n大戏终于拉开帷幕。\n好戏即将开始。\n风暴即将降临。\n潮水正向着堤岸涌来。\n敌军正朝着营地逼了过来。\n骑兵正朝着山口袭过去。\n这一天注定要被记住。\n这一切都说明了问题。\n这一切意味着新生。\n就这样，全部收场。\n就这样，一切都落幕。\n新的旅程就此展开。\n崭新的篇章正在展开。\n新的人生从此开始。",
+  "toxic_bare_realize_ok":"那一刻我终于明白，母亲当年为什么总在夜里哭。\n我抓起外套就往门口走。",
   "toxic_summary_subclause_ok": "等这一切结束了，我们就能过上平静幸福的生活了。\n他把门带上了。",
   "toxic_summary_idiom_ok": "世间的这一刻，所有人都接受了命中注定的结局！\n他转身走了。",
   "toxic_dialogue_ok": "「没人知道。」\n他笑了笑接着往前走。",
@@ -109,7 +113,14 @@ run_functional() {
   "toxic_multi_tail_ok": "是他的错，不是我的错，不是吗。\n他点了点头。",
   "toxic_exempt_marker_ok": "# 第1章\n<!-- 去味:跳过 -->\n没有伴奏，没有和声，没有提词器。",
   "toxic_exempt_fullwidth_ok": "# 第1章\n<!-- 去味：跳过 -->\n没有伴奏，没有和声，没有提词器。",
+  "toxic_exempt_spaced_ok": "# 第1章\n<!--去味 ： 跳过\t-->\n没有伴奏，没有和声，没有提词器。",
+  "toxic_exempt_bare_blocked": "# 第1章\n去味:跳过\n没有伴奏，没有和声，没有提词器。",
   "toxic_exempt_other_nets": "# 第1章\n<!-- 去味:跳过 -->\n没有伴奏，没有和声，没有提词器。\n按照本章细纲的情节点他该出场了。",
+  "toxic_comment_ok": "他推开门。\n\n<!-- 备注：声音不大，却让人心里一紧 -->\n他走了进去。",
+  "toxic_comment_multiline_ok": "他推开门。\n<!-- 备注\n声音不高，却稳稳压住了整个大厅。\n-->\n他走了进去。",
+  "toxic_comment_inline": "他推开门。<!-- 备注 -->声音不高，却稳稳压住了整个大厅。",
+  "toxic_comment_unclosed": "他推开门。\n<!-- 备注没闭合\n声音不高，却稳稳压住了整个大厅。",
+  "toxic_comment_unclosed_after_closed": "<!-- 备注 -->\n他推开门。\n<!-- 没闭合 <!-- 也没闭合\n声音不高，却稳稳压住了整个大厅。",
   "toxic_astral_window_ok": "没人知道他练了多少年。\n“第1排😀😀😀😀😀😀😀😀😀😀”\n“第2排😀😀😀😀😀😀😀😀😀😀”\n“第3排😀😀😀😀😀😀😀😀😀😀”\n“第4排😀😀😀😀😀😀😀😀😀😀”\n“第5排😀😀😀😀😀😀😀😀😀😀”\n“第6排😀😀😀😀😀😀😀😀😀😀”\n“第7排😀😀😀😀😀😀😀😀😀😀”\n“第8排😀😀😀😀😀😀😀😀😀😀”\n“第9排😀😀😀😀😀😀😀😀😀😀”\n“第10排😀😀😀😀😀😀😀😀😀😀”\n“第11排😀😀😀😀😀😀😀😀😀😀”\n“第12排😀😀😀😀😀😀😀😀😀😀”\n“第13排😀😀😀😀😀😀😀😀😀😀”\n“第14排😀😀😀😀😀😀😀😀😀😀”\n“第15排😀😀😀😀😀😀😀😀😀😀”\n“第16排😀😀😀😀😀😀😀😀😀😀”\n“第17排😀😀😀😀😀😀😀😀😀😀”\n“第18排😀😀😀😀😀😀😀😀😀😀”\n“第19排😀😀😀😀😀😀😀😀😀😀”\n“第20排😀😀😀😀😀😀😀😀😀😀”\n“第21排😀😀😀😀😀😀😀😀😀😀”\n“第22排😀😀😀😀😀😀😀😀😀😀”\n“第23排😀😀😀😀😀😀😀😀😀😀”\n“第24排😀😀😀😀😀😀😀😀😀😀”\n“第25排😀😀😀😀😀😀😀😀😀😀”\n“第26排😀😀😀😀😀😀😀😀😀😀”\n“第27排😀😀😀😀😀😀😀😀😀😀”\n“第28排😀😀😀😀😀😀😀😀😀😀”\n“第29排😀😀😀😀😀😀😀😀😀😀”\n“第30排😀😀😀😀😀😀😀😀😀😀”",
   "toxic_trailer_window_ok": "没人知道他练了多少年。\n江晨把这段视频剪了又剪从凌晨剪到天亮每一帧都抠得死死的。江晨把这段视频剪了又剪从凌晨剪到天亮每一帧都抠得死死的。江晨把这段视频剪了又剪从凌晨剪到天亮每一帧都抠得死死的。江晨把这段视频剪了又剪从凌晨剪到天亮每一帧都抠得死死的。江晨把这段视频剪了又剪从凌晨剪到天亮每一帧都抠得死死的。江晨把这段视频剪了又剪从凌晨剪到天亮每一帧都抠得死死的。江晨把这段视频剪了又剪从凌晨剪到天亮每一帧都抠得死死的。江晨把这段视频剪了又剪从凌晨剪到天亮每一帧都抠得死死的。江晨把这段视频剪了又剪从凌晨剪到天亮每一帧都抠得死死的。江晨把这段视频剪了又剪从凌晨剪到天亮每一帧都抠得死死的。江晨把这段视频剪了又剪从凌晨剪到天亮每一帧都抠得死死的。江晨把这段视频剪了又剪从凌晨剪到天亮每一帧都抠得死死的。江晨把这段视频剪了又剪从凌晨剪到天亮每一帧都抠得死死的。江晨把这段视频剪了又剪从凌晨剪到天亮每一帧都抠得死死的。江晨把这段视频剪了又剪从凌晨剪到天亮每一帧都抠得死死的。江晨把这段视频剪了又剪从凌晨剪到天亮每一帧都抠得死死的。江晨把这段视频剪了又剪从凌晨剪到天亮每一帧都抠得死死的。江晨把这段视频剪了又剪从凌晨剪到天亮每一帧都抠得死死的。江晨把这段视频剪了又剪从凌晨剪到天亮每一帧都抠得死死的。江晨把这段视频剪了又剪从凌晨剪到天亮每一帧都抠得死死的。江晨把这段视频剪了又剪从凌晨剪到天亮每一帧都抠得死死的。江晨把这段视频剪了又剪从凌晨剪到天亮每一帧都抠得死死的。\n他把琴盖合上，起了身。"
 }
@@ -211,6 +222,17 @@ PY
   grep -q '^toxic_trailer | 第2行 毒句式\[trailer-ending\]' "$tmp/py.txt" || { echo "FAIL: 毒句式正例 trailer-ending 未命中「没人知道，这才刚刚开头」" >&2; return 3; }
   grep -q '^toxic_trailer_summary | 第2行 毒句式\[trailer-summary\]' "$tmp/py.txt" || { echo "FAIL: 毒句式正例 trailer-summary 未命中「这一切都结束了」" >&2; return 3; }
   grep -q '^toxic_trailer_summary_fate | 第2行 毒句式\[trailer-summary\]' "$tmp/py.txt" || { echo "FAIL: 毒句式正例 trailer-summary 未命中「这一夜注定无人入眠」" >&2; return 3; }
+  # trailer 两条正则的各分支各锁一个正例（此前只靠 check-hook-regex-sync 的规范串 grep）。
+  for pair in toxic_trailer_summary_sozhe:trailer-summary toxic_trailer_summary_new_chapter:trailer-summary \
+      toxic_trailer_summary_fate_gear:trailer-summary toxic_trailer_shubuzhi:trailer-ending \
+      toxic_trailer_imminent:trailer-ending toxic_trailer_pressing:trailer-ending; do
+    grep -q "^${pair%%:*} | 第2行 毒句式\[${pair#*:}\]" "$tmp/py.txt" || { echo "FAIL: 毒句式正例 ${pair%%:*} 未命中 ${pair#*:}" >&2; return 3; }
+  done
+  # 其余备选词各占一行、各命中一条，数量锚死（10 条预告腔 + 8 条状态总结）：任一备选词在
+  # 单端被删或改写，两端逐字 diff 或这里的计数就会红。
+  [ "$(grep '^toxic_trailer_alternatives |' "$tmp/py.txt" | grep -o '毒句式\[trailer-ending\]' | wc -l | tr -d ' ')" = 10 ] \
+    && [ "$(grep '^toxic_trailer_alternatives |' "$tmp/py.txt" | grep -o '毒句式\[trailer-summary\]' | wc -l | tr -d ' ')" = 8 ] \
+    || { echo "FAIL: trailer 备选词正例未逐行命中（期望 10 条 trailer-ending + 8 条 trailer-summary）" >&2; return 3; }
   grep -q '^toxic_bare_realize_ok | $' "$tmp/py.txt" || { echo "FAIL: 「那一刻…终于明白」审判金句被误报（短篇卖点，本规则不收认知节拍）" >&2; return 3; }
   grep -q '^toxic_summary_subclause_ok | $' "$tmp/py.txt" || { echo "FAIL: 条件从句「等这一切结束了，…」被误报（未落句末断言位）" >&2; return 3; }
   grep -q '^toxic_summary_idiom_ok | $' "$tmp/py.txt" || { echo "FAIL: 成语「命中注定」被跨匹配成 trailer-summary" >&2; return 3; }
@@ -227,8 +249,31 @@ PY
   grep -q '^toxic_multi_tail_ok | $' "$tmp/py.txt" || { echo "FAIL: 带中间对比项的反问尾巴「…，不是吗」被误报" >&2; return 3; }
   grep -q '^toxic_exempt_marker_ok | $' "$tmp/py.txt" || { echo "FAIL: 标「去味:跳过」的正文毒句式未被写后网豁免" >&2; return 3; }
   grep -q '^toxic_exempt_fullwidth_ok | $' "$tmp/py.txt" || { echo "FAIL: 全角冒号豁免标记「去味：跳过」未生效" >&2; return 3; }
+  # 豁免标记的语法与 storyctl DESLOP_SKIP 同一套：必须写成 HTML 注释，注释内可有空格/Tab；
+  # 裸写的「去味:跳过」是正文可见文字，不算豁免。
+  grep -q '^toxic_exempt_spaced_ok | $' "$tmp/py.txt" || { echo "FAIL: 带空格的豁免标记 <!--去味 ： 跳过 --> 未生效（与 storyctl 语法不一致）" >&2; return 3; }
+  grep -q '^toxic_exempt_bare_blocked | .*毒句式' "$tmp/py.txt" || { echo "FAIL: 裸写的「去味:跳过」（不在 HTML 注释里）被当成豁免" >&2; return 3; }
   grep -q '^toxic_exempt_other_nets | 第4行 工程词泄漏' "$tmp/py.txt" || { echo "FAIL: 豁免标记不应连带关掉毒句式以外的网（工程词漏检）" >&2; return 3; }
   grep '^toxic_exempt_other_nets' "$tmp/py.txt" | grep -q '毒句式' && { echo "FAIL: 豁免标记在场时毒句式仍被推回" >&2; return 3; }
+  # HTML 注释（作者备注、豁免标记）不是正文：与 check-ai-patterns.js 同规则屏蔽，可跨行；到文末都没
+  # 闭合的 `<!--` 不算注释（漏写 `-->` 不能藏住后文）。此前 hook 不屏蔽，备注里的句式被当欠账硬拦，
+  # 而 chapter check 用的检测器返回空，两道门口径分叉。
+  for name in toxic_comment_ok toxic_comment_multiline_ok; do
+    grep -q "^$name | $" "$tmp/py.txt" || { echo "FAIL: $name HTML 注释里的句式被写后网当毒句式（检测器不扫注释）" >&2; return 3; }
+  done
+  grep -q '^toxic_comment_inline | 第1行 毒句式\[voice-contrast\]' "$tmp/py.txt" || { echo "FAIL: 行内注释之后的正文毒句式漏检" >&2; return 3; }
+  for name in toxic_comment_unclosed toxic_comment_unclosed_after_closed; do
+    grep -q "^$name | 第[34]行 毒句式\[voice-contrast\]" "$tmp/py.txt" || { echo "FAIL: $name 未闭合的 <!-- 把后文藏起来了" >&2; return 3; }
+  done
+  # 与检测器逐 fixture 对齐：hook 报不报 voice-contrast == check-ai-patterns.js 报不报。
+  local detector="$ROOT/skills/story-long-write/scripts/check-ai-patterns.js" cname hook_hit det_hit
+  for cname in toxic_comment_ok toxic_comment_multiline_ok toxic_comment_inline toxic_comment_unclosed toxic_comment_unclosed_after_closed; do
+    node -e 'const fx=require(process.argv[1]);require("fs").writeFileSync(process.argv[2],fx[process.argv[3]])' "$tmp/fixtures.json" "$tmp/$cname.md" "$cname"
+    hook_hit=0; grep "^$cname |" "$tmp/py.txt" | grep -q 'voice-contrast' && hook_hit=1
+    det_hit=0; node "$detector" --json "$tmp/$cname.md" </dev/null > "$tmp/$cname.json" || true
+    grep -q '"voice-contrast"' "$tmp/$cname.json" && det_hit=1
+    [ "$hook_hit" = "$det_hit" ] || { echo "FAIL: $cname 写后网（${hook_hit}）与 check-ai-patterns.js（${det_hit}）对 HTML 注释口径不一致" >&2; return 3; }
+  done
   grep -q '^toxic_astral_window_ok | $' "$tmp/py.txt" || { echo "FAIL: 引号内 emoji 的占位长度未按 UTF-16 码元对齐，trailer 窗口切点漂移" >&2; return 3; }
   grep -q '^toxic_quote_codename_ok | $' "$tmp/py.txt" || { echo "FAIL: 引号占位替 trailer-summary 的句末 [。！] 伪造终止符（占位字符落进了规则接受位）" >&2; return 3; }
 
@@ -245,46 +290,6 @@ PY
   grep -q '^truncate | 第2行 疑似截断' "$tmp/py.txt" || { echo "FAIL: 真截断（结尾无标点）未被检出" >&2; return 3; }
   grep -q '^truncate_astral | 第2行 疑似截断' "$tmp/py.txt" || { echo "FAIL: 增补面字符结尾的真截断未被检出" >&2; return 3; }
   ! grep '^truncate_astral |' "$tmp/py.txt" | grep -q '�' || { echo "FAIL: 增补面字符摘要被 UTF-16 切坏" >&2; return 3; }
-
-  # 转译 TS：擦除类型即可（net 函数只用 RegExp/String/Set/Array）。优先 node 原生类型擦除
-  # （node ≥ 22.6 的 --experimental-strip-types），否则用本机已装的 esbuild 二进制。
-  # 不走 `npx --yes esbuild`：CI 的 node 20 job 逐次联网下载既慢又脆；
-  # 无 TS 运行时只跳过 OpenCode plugin 直跑；上面的 Codex ↔ ZCode 行为 parity 仍是硬门。
-  cp "$OPENCODE" "$tmp/p.ts"
-  # plugin.ts imports the core from ./lib/story_hook_core.js (the deploy target — a lib/
-  # subdir escapes OpenCode's single-level .opencode/plugins/*.js plugin auto-discovery);
-  # mirror that layout here so the copied plugin's import resolves.
-  mkdir -p "$tmp/lib"
-  cp "$OPENCODE_CORE" "$tmp/lib/story_hook_core.js"
-  # plugin.ts imports the net from ./lib/story_hook_core.js; re-export it from that companion
-  # so the type-stripped module exposes the exact function OpenCode runs at deploy time.
-  printf "\nexport { proseNetFindings as _net } from './lib/story_hook_core.js'\n" >> "$tmp/p.ts"
-  local ran=0
-  if node --experimental-strip-types -e '' >/dev/null 2>&1; then
-    node --experimental-strip-types --input-type=module -e "
-      import { _net } from '$tmp/p.ts';
-      import fs from 'node:fs';
-      const fx = JSON.parse(fs.readFileSync('$tmp/fixtures.json','utf-8'));
-      for (const k of Object.keys(fx).sort()) console.log(k, '|', _net(fx[k]).join(' ;; '));
-    " > "$tmp/ts.txt" 2>/dev/null && ran=1
-  fi
-  if [ "$ran" -eq 0 ] && command -v esbuild >/dev/null 2>&1; then
-    if esbuild "$tmp/p.ts" --format=esm --platform=node --log-level=silent --outfile="$tmp/p.mjs" >/dev/null 2>&1; then
-      node --input-type=module -e "
-        import { _net } from '$tmp/p.mjs';
-        import fs from 'node:fs';
-        const fx = JSON.parse(fs.readFileSync('$tmp/fixtures.json','utf-8'));
-        for (const k of Object.keys(fx).sort()) console.log(k, '|', _net(fx[k]).join(' ;; '));
-      " > "$tmp/ts.txt" 2>/dev/null && ran=1
-    fi
-  fi
-  [ "$ran" -eq 0 ] && return 2
-
-  if ! diff "$tmp/py.txt" "$tmp/ts.txt" >/dev/null; then
-    echo "FAIL: 功能 parity 不一致（codex python 网 vs opencode TS 网）：" >&2
-    diff "$tmp/py.txt" "$tmp/ts.txt" >&2 || true
-    return 3
-  fi
   return 0
 }
 
@@ -348,6 +353,15 @@ run_cmd_parity() {
   "patch_delete_only": "*** Begin Patch\n*** Delete File: book/正文/第9章.md\n*** End Patch",
   "patch_multi_move": "*** Begin Patch\n*** Add File: notes.md\n+x\n*** Update File: draft.md\n*** Move to: book/正文/第10章.md\n+正文\n*** End Patch",
   "patch_context_move": "*** Begin Patch\n*** Update File: book/正文/第12章.md\n@@\n *** Move to: notes.md\n+正文\n*** End Patch",
+  "cd_then_heredoc_redirect": "cd \"/p/书\" && cat > 正文/第022章_x.md <<EOF\nhi\nEOF",
+  "cd_chain_tee": "cd /a && cd b && tee 正文/第3章.md",
+  "cd_relative_cp": "cd 书 && cp draft.md 正文/第2章.md",
+  "cd_clobber_redirect": "cd 书 && cat draft >| 正文/第3章.md",
+  "cd_dup_redirect": "cd 书 && echo x >& 正文/第3章.md",
+  "cd_amp_redirect": "cd 书 && echo x &> 正文/第3章.md",
+  "cd_into_body_redirect": "cd 书/正文 && cat > 第3章.md",
+  "cd_into_body_tee": "cd 正文 && tee 第3章.md",
+  "cd_redirect_then_pipe": "cd 书 && cat x > 正文/第3章.md 2>&1 | tee log",
   "commit_plain": "git commit -m x",
   "commit_chain": "git add . && git commit -m x",
   "commit_if": "if true; then git commit -m x; fi",
@@ -390,6 +404,12 @@ JS
     || { echo "FAIL: 全角空格章名被 \\s 截断（U+3000 不是 shell 分词符）" >&2; return 3; }
   grep -q 'tee_quoted_space :: pros=\[my book/正文/第1章_x.md\]' "$tmp/cpy.txt" \
     || { echo "FAIL: 带空格的引号 tee 目标未被整段取出" >&2; return 3; }
+  # 有 cd 时按段扫描重定向：`>|` `>&` `&>` 不能被切段切丢，cd 进 正文/ 后的相对目标也要认出来。
+  for want in 'cd_clobber_redirect :: pros=\[书/正文/第3章.md\]' 'cd_dup_redirect :: pros=\[书/正文/第3章.md\]' \
+      'cd_amp_redirect :: pros=\[书/正文/第3章.md\]' 'cd_into_body_redirect :: pros=\[书/正文/第3章.md\]' \
+      'cd_into_body_tee :: pros=\[正文/第3章.md\]' 'cd_redirect_then_pipe :: pros=\[书/正文/第3章.md\]'; do
+    grep -q "$want" "$tmp/cpy.txt" || { echo "FAIL: cd 后的写正文目标没认出来：$want" >&2; return 3; }
+  done
   grep -q 'cp_quoted_space :: pros=\[my book/正文/第1章_x.md\]' "$tmp/cpy.txt" \
     || { echo "FAIL: cp 的引号目标被按空白切碎，末位取到了另一本书的路径" >&2; return 3; }
   grep -q 'cp_quoted_operator :: pros=\[book|archive/正文/第11章.md\]' "$tmp/cpy.txt" \
@@ -556,41 +576,77 @@ JS
   #     毒句式欠账门（上一章有欠账拦 / 标「去味:跳过」豁免放 / 全角冒号「去味：跳过」豁免放 /
   #     上一章含坏字节替换解码继续扫仍拦）、新书无脚手架时仍须先建细纲（拦）
   local blk="$tmp/blk"
+  # 细纲必须写了内容（不计 # 号和空白 ≥30 字，标题文字照算）才放行；这段旧书式的自由文本细纲不含 v0.8 字段，照样算数。
+  local filled='# 第2章 细纲
+江晨在雨夜推开旧书店的门，发现柜台后坐着失踪三年的师父，两人对视良久谁都没先开口。'
   mkdir -p "$blk/long/正文" "$blk/long/大纲" "$blk/short" "$blk/short2" \
     "$blk/long2/正文" "$blk/long2/大纲" "$blk/long3/正文" "$blk/long3/大纲"
-  : > "$blk/long/大纲/细纲_第2章.md"
+  printf '%s\n' "$filled" > "$blk/long/大纲/细纲_第2章.md"
   : > "$blk/short/设定.md"
   : > "$blk/short2/其他.md"
-  : > "$blk/long2/大纲/细纲_第2章.md"
+  printf '%s\n' "$filled" > "$blk/long2/大纲/细纲_第2章.md"
   printf '%s\n' '# 第1章 旧' '' '声音不大，却带着一股狠劲。' > "$blk/long2/正文/第1章_旧.md"
-  : > "$blk/long3/大纲/细纲_第2章.md"
+  printf '%s\n' "$filled" > "$blk/long3/大纲/细纲_第2章.md"
   printf '%s\n' '# 第1章 旧' '<!-- 去味:跳过 -->' '声音不大，却带着一股狠劲。' > "$blk/long3/正文/第1章_旧.md"
   mkdir -p "$blk/long4/正文" "$blk/long4/大纲" "$blk/long5/正文" "$blk/long5/大纲"
-  : > "$blk/long4/大纲/细纲_第2章.md"
+  printf '%s\n' "$filled" > "$blk/long4/大纲/细纲_第2章.md"
   printf '%s\n' '# 第1章 旧' '<!-- 去味：跳过 -->' '声音不大，却带着一股狠劲。' > "$blk/long4/正文/第1章_旧.md"
-  : > "$blk/long5/大纲/细纲_第2章.md"
+  printf '%s\n' "$filled" > "$blk/long5/大纲/细纲_第2章.md"
   { printf '%s\n' '# 第1章 旧' '声音不大，却带着一股狠劲。'; printf '\xff\n'; } > "$blk/long5/正文/第1章_旧.md"
-  for book in long long2 long3 long4 long5; do
+  # 豁免标记语法：注释内带空格/Tab 也认（long8）；裸写不在注释里的「去味:跳过」不认（long9）。
+  mkdir -p "$blk/long8/正文" "$blk/long8/大纲" "$blk/long9/正文" "$blk/long9/大纲"
+  printf '%s\n' "$filled" > "$blk/long8/大纲/细纲_第2章.md"
+  printf '%s\n' '# 第1章 旧' '<!--  去味 : 跳过	-->' '声音不大，却带着一股狠劲。' > "$blk/long8/正文/第1章_旧.md"
+  printf '%s\n' "$filled" > "$blk/long9/大纲/细纲_第2章.md"
+  printf '%s\n' '# 第1章 旧' '去味:跳过' '声音不大，却带着一股狠劲。' > "$blk/long9/正文/第1章_旧.md"
+  for book in long long2 long3 long4 long5 long8 long9; do
     mkdir -p "$blk/$book/追踪"
     printf '%s\n' '{"schema_version":4,"state_revision":0,"last_committed_chapter":1}' > "$blk/$book/追踪/_tracking-state.json"
     printf '%s\n' '> 状态修订：0' > "$blk/$book/追踪/上下文.md"
   done
   # 上一章正文已存在、state 提交进度落后：必须拦住下一章首建。
   mkdir -p "$blk/long6/正文" "$blk/long6/大纲" "$blk/long6/追踪"
-  : > "$blk/long6/大纲/细纲_第2章.md"
+  printf '%s\n' "$filled" > "$blk/long6/大纲/细纲_第2章.md"
   printf '%s\n' '# 第1章 旧' '他把门关上了。' > "$blk/long6/正文/第1章_旧.md"
   printf '%s\n' '{"schema_version":4,"state_revision":0,"last_committed_chapter":0}' > "$blk/long6/追踪/_tracking-state.json"
   printf '%s\n' '> 状态修订：0' > "$blk/long6/追踪/上下文.md"
   # canonical case：agent 直接首建 {书}/正文/第N章.md，即使书目录还没有大纲/追踪/设定脚手架，
   # 也必须 fail closed；相对目标的 cwd 语义由各宿主 adapter 单独负责，不能靠削弱核心守卫来掩盖。
   mkdir -p "$blk/bare/正文"
+  # 空细纲（只有文件名对得上）：0 字节 / 只有标题 / BOM+CRLF+全角空格 / 29 字（差 1 字）都拦；
+  # 恰好 30 字放行；同章两份细纲一空一满放行（任一份写了内容即可）。state 均有效，
+  # 只有细纲这一个变量。
+  # 标题行的文字也算内容（只去掉行首 #）：`# 第1章 细纲` 计 5 字，正文再补 24/25 字凑成 29/30。
+  local body29='他推门进屋看见师父坐在柜台后面他推门进屋看见师父'
+  local body30='他推门进屋看见师父坐在柜台后面他推门进屋看见师父坐'
+  for book in oe_zero oe_heading oe_bomcrlf oe_29 oe_30 oe_dup oe_headcontent oe_gbk; do
+    mkdir -p "$blk/$book/正文" "$blk/$book/大纲" "$blk/$book/追踪"
+    printf '%s\n' '{"schema_version":4,"state_revision":0,"last_committed_chapter":0}' > "$blk/$book/追踪/_tracking-state.json"
+    printf '%s\n' '> 状态修订：0' > "$blk/$book/追踪/上下文.md"
+  done
+  mkdir -p "$blk/long7/正文" "$blk/long7/大纲" "$blk/long7/追踪"
+  printf '%s\n' "$filled" > "$blk/long7/大纲/细纲_第2章.md"
+  printf '%s\n' '{"schema_version":4,"state_revision":0,"last_committed_chapter":1}' > "$blk/long7/追踪/_tracking-state.json"
+  printf '%s\n' '> 状态修订：0' > "$blk/long7/追踪/上下文.md"
+  { printf '%s\n' '# 第1章 旧'; for i in 1 2 3 4 5 6 7 8; do printf '%s\n' "声音不大，却带着第${i}股狠劲。"; done; printf '%s\n' '他把门关上了。'; } > "$blk/long7/正文/第1章_旧.md"
+  : > "$blk/oe_zero/大纲/细纲_第001章.md"
+  printf '%s\n' '# 第1章 细纲' '## 目标情绪' '  ## 主角选择' '' > "$blk/oe_heading/大纲/细纲_第001章.md"
+  printf '\357\273\277# 第1章 细纲\r\n\r\n\343\200\200\343\200\200\t \r\n' > "$blk/oe_bomcrlf/大纲/细纲_第001章.md"
+  printf '%s\n' '# 第1章 细纲' "$body29" > "$blk/oe_29/大纲/细纲_第001章.md"
+  printf '%s\n' '# 第1章 细纲' "$body30" > "$blk/oe_30/大纲/细纲_第001章.md"
+  : > "$blk/oe_dup/大纲/细纲_第001章.md"
+  printf '%s\n' '# 第1章 细纲' "$body30" > "$blk/oe_dup/大纲/细纲_第1章_开端.md"
+  # 内容写在标题行上（`## 核心事件：…`）的细纲是写了东西的，不能按「只有标题」拦。
+  printf '%s\n' '# 第1章' '## 核心事件：江晨雨夜推门发现失踪三年的师父坐在柜台后' '## 主角选择：留下' > "$blk/oe_headcontent/大纲/细纲_第001章.md"
+  # 不是合法 UTF-8 的细纲（GBK 旧稿）按非空放行，与 bash guard 同口径。
+  python3 -c 'import sys;open(sys.argv[1],"wb").write("第二天他就回来了，大家都说他变了，只是没人问".encode("gbk")+b"\n")' "$blk/oe_gbk/大纲/细纲_第001章.md"
 
   python3 - "$CODEX" "$blk" > "$tmp/bpy.txt" <<'PY'
 import importlib.util, sys
 from pathlib import Path
 spec = importlib.util.spec_from_file_location("ch", sys.argv[1]); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 root = Path(sys.argv[2])
-for rel in ["long/正文/第1章_起.md", "long/正文/第2章_承.md", "short/正文.md", "short2/正文.md", "long2/正文/第2章_新.md", "long3/正文/第2章_新.md", "long4/正文/第2章_新.md", "long5/正文/第2章_新.md", "long6/正文/第2章_新.md", "bare/正文/第1章_起.md"]:
+for rel in ["long/正文/第1章_起.md", "long/正文/第2章_承.md", "short/正文.md", "short2/正文.md", "long2/正文/第2章_新.md", "long3/正文/第2章_新.md", "long4/正文/第2章_新.md", "long5/正文/第2章_新.md", "long6/正文/第2章_新.md", "bare/正文/第1章_起.md", "$PROJ/正文/第001章_x.md", "$(pwd)/book/正文/第001章_y.md", "long7/正文/第2章_新.md", "long8/正文/第2章_新.md", "long9/正文/第2章_新.md", "oe_zero/正文/第001章_a.md", "oe_heading/正文/第001章_a.md", "oe_bomcrlf/正文/第001章_a.md", "oe_29/正文/第001章_a.md", "oe_30/正文/第001章_a.md", "oe_dup/正文/第001章_a.md", "oe_headcontent/正文/第001章_a.md", "oe_gbk/正文/第001章_a.md"]:
     reason = m.prose_block_reason(root, root / rel)
     sys.stdout.buffer.write((f"{rel} :: {reason if reason else '-'}\n").encode("utf-8"))
 PY
@@ -598,7 +654,7 @@ PY
 const path = require("node:path")
 const core = require(process.argv[2])
 const root = process.argv[3]
-for (const rel of ["long/正文/第1章_起.md", "long/正文/第2章_承.md", "short/正文.md", "short2/正文.md", "long2/正文/第2章_新.md", "long3/正文/第2章_新.md", "long4/正文/第2章_新.md", "long5/正文/第2章_新.md", "long6/正文/第2章_新.md", "bare/正文/第1章_起.md"]) {
+for (const rel of ["long/正文/第1章_起.md", "long/正文/第2章_承.md", "short/正文.md", "short2/正文.md", "long2/正文/第2章_新.md", "long3/正文/第2章_新.md", "long4/正文/第2章_新.md", "long5/正文/第2章_新.md", "long6/正文/第2章_新.md", "bare/正文/第1章_起.md", "$PROJ/正文/第001章_x.md", "$(pwd)/book/正文/第001章_y.md", "long7/正文/第2章_新.md", "long8/正文/第2章_新.md", "long9/正文/第2章_新.md", "oe_zero/正文/第001章_a.md", "oe_heading/正文/第001章_a.md", "oe_bomcrlf/正文/第001章_a.md", "oe_29/正文/第001章_a.md", "oe_30/正文/第001章_a.md", "oe_dup/正文/第001章_a.md", "oe_headcontent/正文/第001章_a.md", "oe_gbk/正文/第001章_a.md"]) {
   const reason = core.proseBlockReason(root, path.join(root, rel))
   console.log(`${rel} :: ${reason || "-"}`)
 }
@@ -615,9 +671,58 @@ JS
   grep -q '毒句式欠账' "$tmp/bpy.txt" || { echo "FAIL: 上一章毒句式欠账未被欠账门拦截" >&2; return 3; }
   grep -q 'long3/正文/第2章_新.md :: -' "$tmp/bpy.txt" || { echo "FAIL: 标「去味:跳过」豁免的上一章仍被欠账门误拦" >&2; return 3; }
   grep -q 'long4/正文/第2章_新.md :: -' "$tmp/bpy.txt" || { echo "FAIL: 全角冒号豁免标记「去味：跳过」未被欠账门认可" >&2; return 3; }
+  grep -q 'long8/正文/第2章_新.md :: -' "$tmp/bpy.txt" || { echo "FAIL: 注释内带空格的豁免标记 <!--  去味 : 跳过 --> 未被欠账门认可" >&2; return 3; }
+  grep -q 'long9/正文/第2章_新.md :: ⛔.*未清毒句式欠账' "$tmp/bpy.txt" || { echo "FAIL: 裸写的「去味:跳过」（不在 HTML 注释里）被欠账门当成豁免" >&2; return 3; }
   grep -q 'long5/正文/第2章_新.md :: ⛔' "$tmp/bpy.txt" || { echo "FAIL: 上一章含坏字节时两端应替换解码继续扫（不得整体放行）" >&2; return 3; }
   grep -q 'long6/正文/第2章_新.md :: ⛔.*必须先提交第1章追踪事务' "$tmp/bpy.txt" || { echo "FAIL: state 的 last_committed_chapter 落后正文时未拦住下一章" >&2; return 3; }
   grep -q 'bare/正文/第1章_起.md :: ⛔' "$tmp/bpy.txt" || { echo "FAIL: 新书无 大纲/追踪/设定 脚手架时首章守卫 fail open" >&2; return 3; }
+  # 缺细纲文案给补零的规范文件名（细纲_第001章.md），不给 细纲_第1章.md 误导模型建错名。
+  grep -q 'long/正文/第1章_起.md :: ⛔.*细纲_第001章\.md' "$tmp/bpy.txt" || { echo "FAIL: 缺细纲文案未给补零的规范细纲文件名" >&2; return 3; }
+  # 目标含未展开的 shell 变量（cat > "$PROJ/正文/..."）：仍拦，但说路径没解析出来，不谎报缺细纲。
+  grep -q '\$PROJ/正文/第001章_x.md :: ⛔.*未展开的 shell 变量' "$tmp/bpy.txt" || { echo "FAIL: shell 变量目标未按「路径未解析」拦截" >&2; return 3; }
+  grep -q '\$PROJ/正文/第001章_x.md :: .*缺少细纲' "$tmp/bpy.txt" && { echo "FAIL: shell 变量目标被误报为缺少细纲" >&2; return 3; }
+  grep -q '\$(pwd)/book/正文/第001章_y.md :: ⛔.*未展开的 shell 变量' "$tmp/bpy.txt" || { echo "FAIL: \$(...) 命令替换目标未按「路径未解析」拦截" >&2; return 3; }
+  for want in oe_zero oe_heading oe_bomcrlf oe_29; do
+    grep -q "^$want/正文/第001章_a.md :: ⛔ 写正文被拦截：第 1 章的细纲（oe_[a-z0-9]*/大纲/细纲_第001章.md）是空的" "$tmp/bpy.txt" \
+      || { echo "FAIL: 空细纲场景 ${want} 未按「细纲是空的」拦截：$(grep "^$want/" "$tmp/bpy.txt")" >&2; return 3; }
+  done
+  # 欠账超过 6 处时的「另有 N 处」指引：长篇上一章指 storyctl chapter check 并带上一章章号（两端逐字同）。
+  grep -qF 'long7/正文/第2章_新.md :: ⛔' "$tmp/bpy.txt" \
+    && grep -qF '另有 2 处，完整检查：{PYTHON} <story-long-write>/scripts/storyctl.py chapter check --project <书目录> --chapter 1）' "$tmp/bpy.txt" \
+    || { echo "FAIL: 欠账门「另有 N 处」未指向上一章的 chapter check：$(grep -A8 '^long7/' "$tmp/bpy.txt")" >&2; return 3; }
+  for want in oe_30 oe_dup oe_headcontent oe_gbk; do
+    grep -q "^$want/正文/第001章_a.md :: -" "$tmp/bpy.txt" \
+      || { echo "FAIL: 写了内容的细纲场景 ${want} 被误拦：$(grep "^$want/" "$tmp/bpy.txt")" >&2; return 3; }
+  done
+
+  # E2b: 毒句式复扫指引 py↔js 逐字同，且方向锚死：长篇分章正文 → chapter check（带章号），
+  #      短篇 正文.md / 正文目录外的第N章 / 无路径 → check-ai-patterns.js。
+  python3 - "$CODEX" > "$tmp/rpy.txt" <<'PY'
+import importlib.util, sys
+from pathlib import Path
+spec = importlib.util.spec_from_file_location("ch", sys.argv[1]); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+for rel in ["书/正文/第012章_夜路.md", "书/正文.md", "书/草稿/第3章.md", ""]:
+    hint = m.toxic_rescan_hint(Path("/p") / rel if rel else None)
+    sys.stdout.buffer.write(f"{rel or '-'} :: {hint}\n".encode("utf-8"))
+PY
+  node - "$CLAUDE_CORE" > "$tmp/rjs.txt" <<'JS'
+const path = require("node:path")
+const core = require(process.argv[2])
+for (const rel of ["书/正文/第012章_夜路.md", "书/正文.md", "书/草稿/第3章.md", ""]) {
+  console.log(`${rel || "-"} :: ${core.toxicRescanHint(rel ? path.join("/p", rel) : "")}`)
+}
+JS
+  if ! diff "$tmp/rpy.txt" "$tmp/rjs.txt" >/dev/null; then
+    echo "FAIL: 毒句式复扫指引 parity 不一致（codex python vs JS core）：" >&2
+    diff "$tmp/rpy.txt" "$tmp/rjs.txt" >&2 || true
+    return 3
+  fi
+  grep -qxF '书/正文/第012章_夜路.md :: 完整检查：{PYTHON} <story-long-write>/scripts/storyctl.py chapter check --project <书目录> --chapter 12' "$tmp/rpy.txt" \
+    || { echo "FAIL: 长篇分章正文的复扫指引未指向 chapter check" >&2; return 3; }
+  for want in '书/正文.md' '书/草稿/第3章.md' '-'; do
+    grep -qxF -- "$want :: 完整扫描：node <skill>/scripts/check-ai-patterns.js --check <正文文件>" "$tmp/rpy.txt" \
+      || { echo "FAIL: 非长篇分章目标（${want}）的复扫指引应保持 check-ai-patterns.js" >&2; return 3; }
+  done
 
   # E3: 追踪状态判定 parity。覆盖缺失、坏 JSON、旧 schema、派生 revision 不一致、
   #     缺修订号、缺章号、提交落后和有效 state 放行，避免 Codex Python 与三端 JS core 漂移。
@@ -707,8 +812,7 @@ run_functional
 rc=$?
 set -e
 case "$rc" in
-  0) echo "功能 parity：codex python 网 == opencode TS 网 == zcode JS 网（扩展 fixtures，含毒句式正反例/AI 自指/截断收尾、豁免标记与 storyctl 字数职责分离）。" ;;
-  2) echo "功能 parity：codex python 网 == zcode JS 网；OpenCode plugin 直跑跳过（无 TS 运行时）。" ;;
+  0) echo "功能 parity：codex python 网 == JS core 网（扩展 fixtures，含毒句式各分支正反例/AI 自指/截断收尾、豁免标记与 storyctl 字数职责分离）。" ;;
   *) fails=$((fails + 1)) ;;
 esac
 
@@ -733,30 +837,80 @@ run_bash_guard_parity() {
   command -v python3 >/dev/null 2>&1 || return 1
   local tmp; tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' RETURN
 
-  # scenario|last_committed|ctx_revision|schema|outline_ch|target_ch|target_exists|拆文库|state
+  # scenario|last_committed|ctx_revision|schema|outline_ch|target_ch|target_exists|拆文库|state|prev[|outline_kind]
   # state=none 时 last/ctx/schema 无意义。target_exists=1 走续写路径（不判细纲，仍判追踪）。
+  # outline_kind 缺省 filled（旧书式自由文本 ≥30 字）；empty=0 字节、heading=只有标题、
+  # short29=差 1 字、exact30=恰好 30 字、bomcrlf=BOM+CRLF+全角空格的空壳、dup=一空一满两份。
+  # whitelist 场景：上一章的毒句式登记在书级 .deslop-whitelist 里（Claude 经 prose-toxic 子命令，
+  # 须与 JS 核一样读白名单，否则 bash 单边误拦）。
+  # prev = 上一章（第001章_旧.md）内容，走欠账门：toxic 有毒句式无豁免、marker 首 6 行内标
+  # <!-- 去味:跳过 -->、fullwidth 全角冒号 去味：跳过（两端正则都认 ：|:）、marker7 标记落在第 7 行
+  # （出了豁免窗口，照拦）；- 不建上一章。
   local scenarios="
-nostate|-|-|-|1|1|0|0|none
-nooutline|-|-|-|-|1|0|0|none
-importwindow|-|-|-|-|1|0|1|none
-importstate|0|0|4|1|3|0|1|yes
-valid|0|0|4|1|1|0|0|yes
-skipahead|0|0|4|3|3|0|0|yes
-existing|1|0|4|1|1|1|0|yes
-existing_mismatch|1|9|4|1|1|1|0|yes
-badschema|0|0|3|1|1|0|0|yes
-revisionbackup|5|0|4|3|3|0|0|yes
+nostate|-|-|-|1|1|0|0|none|-
+nooutline|-|-|-|-|1|0|0|none|-
+importwindow|-|-|-|-|1|0|1|none|-
+importstate|0|0|4|1|3|0|1|yes|-
+valid|0|0|4|1|1|0|0|yes|-
+skipahead|0|0|4|3|3|0|0|yes|-
+existing|1|0|4|1|1|1|0|yes|-
+existing_mismatch|1|9|4|1|1|1|0|yes|-
+badschema|0|0|3|1|1|0|0|yes|-
+revisionbackup|5|0|4|3|3|0|0|yes|-
+debt|1|0|4|2|2|0|0|yes|toxic
+debt_marker|1|0|4|2|2|0|0|yes|marker
+debt_fullwidth|1|0|4|2|2|0|0|yes|fullwidth
+debt_marker7|1|0|4|2|2|0|0|yes|marker7
+debt_whitelist|1|0|4|2|2|0|0|yes|whitelist
+debt_marker_spaced|1|0|4|2|2|0|0|yes|spaced
+debt_marker_bare|1|0|4|2|2|0|0|yes|bare
+outline_empty|0|0|4|1|1|0|0|yes|-|empty
+outline_heading|0|0|4|1|1|0|0|yes|-|heading
+outline_short29|0|0|4|1|1|0|0|yes|-|short29
+outline_exact30|0|0|4|1|1|0|0|yes|-|exact30
+outline_bomcrlf|0|0|4|1|1|0|0|yes|-|bomcrlf
+outline_dup|0|0|4|1|1|0|0|yes|-|dup
+outline_headcontent|0|0|4|1|1|0|0|yes|-|headcontent
+outline_gbk|0|0|4|1|1|0|0|yes|-|gbk
+outline_empty_existing|1|0|4|1|1|1|0|yes|-|empty
 "
   local out_bash="$tmp/bash.txt" out_js="$tmp/js.txt"
   : > "$out_bash"; : > "$out_js"
 
   local line
-  while IFS='|' read -r name last ctx schema outline target exists lib state; do
+  while IFS='|' read -r name last ctx schema outline target exists lib state prev okind; do
     [ -n "${name:-}" ] || continue
     local proj="$tmp/$name" book="$tmp/$name/书"
     mkdir -p "$book/大纲" "$book/正文" "$book/追踪"
     [ "$lib" = "1" ] && mkdir -p "$proj/拆文库/书"
-    [ "$outline" != "-" ] && printf '# 细纲\n' > "$book/大纲/细纲_第00${outline}章.md"
+    if [ "$outline" != "-" ]; then
+      local ofile="$book/大纲/细纲_第00${outline}章.md"
+      # 标题文字也算内容：`# 细纲` 计 2 字，正文 28 字凑成恰好 30。
+      local o30='他推门进屋看见师父坐在柜台后面他推门进屋看见师父坐在柜台'
+      case "${okind:-filled}" in
+        filled) printf '%s\n' '# 细纲' '江晨在雨夜推开旧书店的门，发现柜台后坐着失踪三年的师父，两人对视良久。' > "$ofile" ;;
+        empty) : > "$ofile" ;;
+        heading) printf '%s\n' '# 细纲' '## 目标情绪' '## 主角选择' > "$ofile" ;;
+        short29) printf '%s\n' '# 细纲' "${o30%台}" > "$ofile" ;;
+        exact30) printf '%s\n' '# 细纲' "$o30" > "$ofile" ;;
+        bomcrlf) printf '\357\273\277# 细纲\r\n\343\200\200\r\n\t\r\n' > "$ofile" ;;
+        dup) : > "$ofile"; printf '%s\n' '# 细纲' "$o30" > "$book/大纲/细纲_第${outline}章_标题.md" ;;
+        headcontent) printf '%s\n' '# 第1章' '## 核心事件：江晨雨夜推门发现失踪三年的师父坐在柜台后' '## 主角选择：留下' > "$ofile" ;;
+        # 22 字 GBK 细纲：不是合法 UTF-8，各端解码计数口径不同（bash 按字节计 27 会拦、JS/py 按替换符计 35 会放），统一按非空放行。
+        gbk) python3 -c 'import sys;open(sys.argv[1],"wb").write("第二天他就回来了，大家都说他变了，只是没人问".encode("gbk")+b"\n")' "$ofile" ;;
+      esac
+    fi
+    local toxic='声音不大，却带着一股狠劲。'
+    case "$prev" in
+      toxic) printf '%s\n' '# 第1章 旧' "$toxic" > "$book/正文/第001章_旧.md" ;;
+      marker) printf '%s\n' '# 第1章 旧' '<!-- 去味:跳过 -->' "$toxic" > "$book/正文/第001章_旧.md" ;;
+      fullwidth) printf '%s\n' '# 第1章 旧' '<!-- 去味：跳过 -->' "$toxic" > "$book/正文/第001章_旧.md" ;;
+      marker7) printf '%s\n' '# 第1章 旧' '他推门。' '她抬头。' '灯亮了。' '雨停了。' '风起了。' '<!-- 去味:跳过 -->' "$toxic" > "$book/正文/第001章_旧.md" ;;
+      spaced) printf '%s\n' '# 第1章 旧' '<!--去味 ：	跳过 -->' "$toxic" > "$book/正文/第001章_旧.md" ;;
+      bare) printf '%s\n' '# 第1章 旧' '去味:跳过' "$toxic" > "$book/正文/第001章_旧.md" ;;
+      whitelist) printf '%s\n' '# 第1章 旧' "$toxic" > "$book/正文/第001章_旧.md"
+        printf '%s\n' '# 作者保留的原句' "${toxic%。}" > "$book/.deslop-whitelist" ;;
+    esac
     if [ "$state" = "yes" ]; then
       printf '{"schema_version":%s,"state_revision":0,"last_committed_chapter":%s}\n' "$schema" "$last" \
         > "$book/追踪/_tracking-state.json"
@@ -768,15 +922,16 @@ revisionbackup|5|0|4|3|3|0|0|yes
     # bash 侧：exit 2 = 拦，0 = 放行
     local payload code
     payload=$(python3 -c 'import json,sys;print(json.dumps({"tool_input":{"file_path":sys.argv[1]}}))' "$abs")
-    ( cd "$proj" && CLAUDE_PROJECT_DIR="$proj" CLAUDE_TOOL_INPUT="$payload" bash "$CLAUDE_GUARD" ) >/dev/null 2>&1
+    ( cd "$proj" && CLAUDE_PROJECT_DIR="$proj" CLAUDE_TOOL_INPUT="$payload" bash "$CLAUDE_GUARD" ) >/dev/null 2>"$tmp/$name.bash.err"
     code=$?
     if [ "$code" = 2 ]; then printf '%s :: block\n' "$name" >> "$out_bash"
     else printf '%s :: pass\n' "$name" >> "$out_bash"; fi
 
-    # JS 核侧
-    node - "$CLAUDE_CORE" "$proj" "$abs" "$name" >> "$out_js" <<'JS'
+    # JS 核侧（拦截文案另存，供欠账门场景核对两端给出同一条修法）
+    node - "$CLAUDE_CORE" "$proj" "$abs" "$name" "$tmp/$name.js.err" >> "$out_js" <<'JS'
 const core = require(process.argv[2])
 const reason = core.proseBlockReason(process.argv[3], process.argv[4])
+require("node:fs").writeFileSync(process.argv[6], reason || "")
 console.log(`${process.argv[5]} :: ${reason ? "block" : "pass"}`)
 JS
   done <<< "$scenarios"
@@ -796,14 +951,48 @@ skipahead block
 existing pass
 existing_mismatch block
 badschema block
-revisionbackup pass"
+revisionbackup pass
+debt block
+debt_marker pass
+debt_fullwidth pass
+debt_marker7 block
+debt_whitelist pass
+debt_marker_spaced pass
+debt_marker_bare block
+outline_empty block
+outline_heading block
+outline_short29 block
+outline_exact30 pass
+outline_bomcrlf block
+outline_dup pass
+outline_headcontent pass
+outline_gbk pass
+outline_empty_existing pass"
   while read -r want_name want_verdict; do
     [ -n "$want_name" ] || continue
     grep -qx "$want_name :: $want_verdict" "$out_bash" || {
-      echo "FAIL: 场景 $want_name 期望 $want_verdict，实得：$(grep "^$want_name ::" "$out_bash")" >&2
+      echo "FAIL: 场景 ${want_name} 期望 ${want_verdict}，实得：$(grep "^$want_name ::" "$out_bash")" >&2
       return 3
     }
   done <<< "$expect"
+  # 空细纲拦下时两端都得说清是哪章细纲空了（只比对文件名：Windows 上 bash 给的是绝对路径）。
+  local side
+  for name in outline_empty outline_heading outline_short29 outline_bomcrlf; do
+    for side in bash js; do
+      grep -q '细纲_第001章.md）是空的' "$tmp/$name.$side.err" || {
+        echo "FAIL: 场景 $name 的 $side 拦截文案未说明细纲是空的：$(cat "$tmp/$name.$side.err")" >&2
+        return 3
+      }
+    done
+  done
+  for name in debt debt_marker7; do
+    for side in bash js; do
+      grep -q '未清毒句式欠账' "$tmp/$name.$side.err" && grep -qF '<!-- 去味:跳过 --> 后重试' "$tmp/$name.$side.err" || {
+        echo "FAIL: 场景 $name 的 $side 拦截文案未指明上一章欠账与豁免标记写法：$(cat "$tmp/$name.$side.err")" >&2
+        return 3
+      }
+    done
+  done
 
   # node 缺席时追踪门必须 fail-open（大纲门仍靠纯 bash 拦住）。
   local nonode="$tmp/nonode"; mkdir -p "$nonode"
@@ -812,6 +1001,12 @@ revisionbackup pass"
   ( cd "$proj" && PATH="$nonode:/usr/bin:/bin" CLAUDE_PROJECT_DIR="$proj" CLAUDE_TOOL_INPUT="$payload" \
       bash "$CLAUDE_GUARD" ) >/dev/null 2>&1
   [ $? -eq 0 ] || { echo "FAIL: node 缺席时追踪门未 fail-open（BLOCKING 路径不得依赖 node 在场）" >&2; return 3; }
+  # 空细纲门是纯 bash：node 缺席时照样拦（负载按 Claude 实际发送的原始 UTF-8，纯 bash 抽取不解 \u 转义）。
+  proj="$tmp/outline_empty"; abs="$tmp/outline_empty/书/正文/第001章_测试.md"
+  payload=$(python3 -c 'import json,sys;sys.stdout.buffer.write(json.dumps({"tool_input":{"file_path":sys.argv[1]}},ensure_ascii=False).encode("utf-8"))' "$abs")
+  ( cd "$proj" && PATH="$nonode:/usr/bin:/bin" CLAUDE_PROJECT_DIR="$proj" CLAUDE_TOOL_INPUT="$payload" \
+      bash "$CLAUDE_GUARD" ) >/dev/null 2>&1
+  [ $? -eq 2 ] || { echo "FAIL: node 缺席时空细纲未被纯 bash 门拦下" >&2; return 3; }
   return 0
 }
 
@@ -820,7 +1015,7 @@ run_uncored_parity
 rc_uncored=$?
 set -e
 case "$rc_uncored" in
-  0) echo "未归核面 parity：codex python == JS core（staged warnings 大小写变体/文案 + 大纲阻断 9 组判定含毒句式欠账门/无脚手架 fail-closed/文案逐字相等）。" ;;
+  0) echo "未归核面 parity：codex python == JS core（staged warnings 大小写变体/文案 + 大纲阻断 23 组判定含空细纲各形态（含非 UTF-8）与标题行写内容/复扫指引/毒句式欠账门/无脚手架 fail-closed/文案逐字相等）。" ;;
   1) echo "未归核面 parity：跳过（无 node/python3/git 运行时）。" ;;
   *) fails=$((fails + 1)) ;;
 esac
@@ -830,7 +1025,7 @@ run_bash_guard_parity
 rc_guard=$?
 set -e
 case "$rc_guard" in
-  0) echo "写正文守卫 parity：Claude bash guard == JS core（10 组工程场景：无 state/缺细纲/导入窗口/跳章/续写/派生修订不一致/坏 schema/回炉备份，含 node 缺席 fail-open）。" ;;
+  0) echo "写正文守卫 parity：Claude bash guard == JS core（26 组工程场景：无 state/缺细纲/空细纲各形态（含 GBK 细纲）/导入窗口/跳章/续写/派生修订不一致/坏 schema/回炉备份/上一章毒句式欠账、豁免标记语法与窗口、书级白名单，含 node 缺席时追踪门 fail-open、空细纲门照拦）。" ;;
   1) echo "写正文守卫 parity：跳过（无 node/python3 运行时）。" ;;
   *) fails=$((fails + 1)) ;;
 esac

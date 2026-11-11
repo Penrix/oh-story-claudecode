@@ -52,13 +52,15 @@ for event, entries in group.items():
             assert 'hooks/story_antigravity_hook.js' in handler['command']
             assert '.agents/.agents/' not in handler['command']
             assert isinstance(handler['timeout'], int) and 1 <= handler['timeout'] <= 30
-assert group['PreToolUse'][0]['matcher'] == 'run_command|write_to_file|replace_file_content|multi_replace_file_content'
-assert group['PostToolUse'][0]['matcher'] == 'run_command|write_to_file|replace_file_content|multi_replace_file_content'
+expected_matcher = 'run_command|write_file|edit_file|write_to_file|replace_file_content|multi_replace_file_content'
+assert group['PreToolUse'][0]['matcher'] == expected_matcher
+assert group['PostToolUse'][0]['matcher'] == expected_matcher
 
 rule = Path('skills/story-setup/references/antigravity/rules/oh-story.md').read_text()
 assert rule.startswith('---\ntrigger: always_on\n---\n')
 assert len(rule) < 12_000
 assert '.agents/skills/' in rule and 'invoke_subagent' in rule
+assert 'Role' in rule and 'send_message' in rule and 'read_file' in rule
 assert '~/.gemini/' in rule and 'scratch/' in rule and 'inside the current workspace' in rule
 PY
 
@@ -113,6 +115,7 @@ for agent in agents:
     assert '.claude/skills/' not in text
     assert '.agents/skills/story-setup/references/agent-references/' in text
     assert f'TypeName: "{name}"' in text
+    assert 'send_message' in text and 'read_file' in text and 'write_file' in text and 'edit_file' in text
 researcher = (root / 'story-researcher/agent.md').read_text(encoding='utf-8')
 assert 'has no WebSearch/webReader tool' in researcher
 assert 'never claim that web fallback ran' in researcher
@@ -137,7 +140,14 @@ grep -q 'target_cli = antigravity' skills/story-setup/SKILL.md \
   || fail "story-setup does not detect Antigravity"
 grep -q "agents_version: $CURRENT_AGENTS_VERSION" skills/story-setup/SKILL.md \
   || fail "story-setup deployment contract is not v$CURRENT_AGENTS_VERSION"
-grep -q 'Antigravity 部署算法' skills/story-setup/SKILL.md \
+# 入口按宿主只读一份部署文件：入口要路由到 Antigravity 那份，算法与校验写在那份里。
+grep -q 'references/deploy-antigravity\.md' skills/story-setup/SKILL.md \
+  || fail "story-setup entry does not route antigravity to its deploy file"
+grep -q 'Antigravity 部署算法' skills/story-setup/references/deploy-antigravity.md \
   || fail "story-setup lacks Antigravity deployment algorithm"
+grep -q 'references_dir` 写 `\.agents/skills/story-setup/references/agent-references' skills/story-setup/references/deploy-antigravity.md \
+  || fail "Antigravity deploy file must set references_dir to .agents/skills"
+grep -q -- '--migrate-symlink' skills/story-setup/references/deploy-antigravity.md \
+  || fail "Antigravity deploy file must gate .agents/skills symlink migration on author consent"
 
 echo "Antigravity adapter checks passed."

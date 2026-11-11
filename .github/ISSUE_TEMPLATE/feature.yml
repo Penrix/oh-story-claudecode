@@ -8,7 +8,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        功能请求需要说明要解决的真实问题，而不只是一个功能名称。Runtime / IDE 适配请求请同时提供官方扩展或 Skills 文档。
+        请说明功能要解决的用户问题、使用场景与期望结果。Runtime / IDE 适配请求请同时提供官方扩展或 Skills 文档。
 
   - type: textarea
     id: problem

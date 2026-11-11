@@ -230,12 +230,14 @@ if (rep.length === 0) throw new Error('引号整行豁免回归：混合行复�
 if (!rep.every((f) => f.severity === 'blocking')) throw new Error('verbatim-repeat 应为 severity=blocking');
 NODE
 
-# 纯台词复沓仍豁免（体裁手法）：三行相同台词不报。
+# 纯台词复沓仍豁免（体裁手法）：同一句长台词紧邻重复、全文三次都不报。台词本身
+# 过了紧邻复读与长句复读的长度门槛，只能靠去引号豁免，而不是短句豁免。
 PURE_DLG="$TMP_DIR/pure-dialogue.md"
 cat > "$PURE_DLG" <<'EOF'
-“我不走。”
-“我不走。”
-“我不走。”
+“我说了今天晚上哪儿也不去，就在这儿等他回来。”
+“我说了今天晚上哪儿也不去，就在这儿等他回来。”
+他没回头。
+“我说了今天晚上哪儿也不去，就在这儿等他回来。”
 EOF
 set +e
 pure_dlg_out="$(node "$SCRIPT" "$PURE_DLG" 2>&1)"
@@ -291,6 +293,20 @@ const dlg = meta.find((f) => f.line === 1);
 const nar = meta.find((f) => f.line === 2);
 if (!dlg || dlg.severity !== 'advisory') throw new Error('tier1 在对话行应为 advisory: ' + JSON.stringify(dlg));
 if (!nar || nar.severity !== 'blocking') throw new Error('tier1 在叙述行应为 blocking: ' + JSON.stringify(nar));
+NODE
+
+# --- tier1 新旧细纲字段名：0.10 起「这章不能说破」等白话字段名同样算工程词 ---
+TIER1_NEW="$TMP_DIR/tier1-new-fields.md"
+cat > "$TIER1_NEW" <<'EOF'
+这章不能说破的事，他一个字也没提。
+EOF
+set +e
+node "$SCRIPT" --json "$TIER1_NEW" > "$OUT"
+set -e
+node - "$OUT" <<'NODE'
+const fs = require('fs');
+const meta = JSON.parse(fs.readFileSync(process.argv[2], 'utf8')).findings.filter((f) => f.type === 'meta-leak');
+if (!meta.some((f) => f.severity === 'blocking' && /这章不能说破/.test(f.message))) throw new Error('「这章不能说破」漏进正文应判 blocking: ' + JSON.stringify(meta));
 NODE
 
 # --- tier1 引号范围：只降级实际落在成对引号内的匹配，不因同一行别处有引号而整行降级 ---

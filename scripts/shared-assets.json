@@ -53,11 +53,8 @@
     },
     {
       "name": "story-author-memory-transaction",
-      "source": "skills/story/scripts/author_memory_commit.py",
+      "source": "skills/story-long-write/scripts/author_memory_commit.py",
       "targets": [
-        "skills/story-deslop/scripts/author_memory_commit.py",
-        "skills/story-long-write/scripts/author_memory_commit.py",
-        "skills/story-review/scripts/author_memory_commit.py",
         "skills/story-short-write/scripts/author_memory_commit.py"
       ]
     },
@@ -66,6 +63,13 @@
       "source": "skills/story-long-scan/scripts/cdp-utils.js",
       "targets": [
         "skills/story-short-scan/scripts/cdp-utils.js"
+      ]
+    },
+    {
+      "name": "scan-rank-aggregator",
+      "source": "skills/story-long-scan/scripts/aggregate-rank.js",
+      "targets": [
+        "skills/story-short-scan/scripts/aggregate-rank.js"
       ]
     },
     {
@@ -91,6 +95,13 @@
         "skills/story-long-write/scripts/style-whitelist.js",
         "skills/story-short-write/scripts/style-whitelist.js",
         "skills/story-review/scripts/style-whitelist.js"
+      ]
+    },
+    {
+      "name": "outline-volume-view",
+      "source": "skills/story-long-write/scripts/outline_view.py",
+      "targets": [
+        "skills/story-import/scripts/outline_view.py"
       ]
     }
   ]
