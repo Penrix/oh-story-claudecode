@@ -14,6 +14,8 @@
 
 未来“第几章揭示”的计划写在卷纲/细纲，不写成时间线既成事实。完整当前语义以 `_tracking-state.json` 为准。
 
+**已经取得与尚未兑现**：不新增 JSON 字段。`delta.result` 写本章确已发生的结果，`character_changes` 写事实变化；长期能复用的本事、资源、身份和关系写进已有 `character_snapshots` 对应的 `identity`、`abilities_resources`、`relationships`、`state`。尚未兑现的承诺、合作意向或未来机会，只用现有 `open_threads`、`delta.next_chapter_commitments` 或伏笔/时间线记录其已知部分，不能提前写成拥有的权利或资产。后续人物因已得资源而行动，记这次新行动及后果，不把同一份旧收益重复算作新收获。只记录确实改变的内容，不为填写追踪凭空制造升级。
+
 ## 运行工具
 
 先探测 Python 3 解释器（依次试 `python3`、`python`、`py -3`）：
